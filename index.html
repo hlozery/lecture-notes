@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Lecture de notes</title>
+  <meta name="description" content="Apprendre à lire les notes en clé de sol et en clé de fa.">
+  <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16161d" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Notes">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Accueil -->
+<section class="screen" id="home">
+  <div class="home-hero">
+    <div class="home-staff" id="home-staff"></div>
+    <h1>Lecture de notes</h1>
+    <p class="muted">Clé de sol · Clé de fa</p>
+    <p class="star-total" id="star-total"></p>
+  </div>
+  <div class="menu">
+    <button class="btn primary big" id="btn-continue">Jouer</button>
+    <button class="btn" data-go="levels">Niveaux</button>
+    <button class="btn" data-go="free">Mode libre</button>
+    <button class="btn" data-go="stats">Mes statistiques</button>
+    <button class="btn ghost" data-go="settings">Réglages</button>
+  </div>
+</section>
+
+<!-- Niveaux -->
+<section class="screen" id="levels" hidden>
+  <header class="bar"><button class="back" data-go="home" aria-label="Retour">‹</button><h2>Niveaux</h2><span></span></header>
+  <ol class="level-list" id="level-list"></ol>
+</section>
+
+<!-- Jeu -->
+<section class="screen game" id="game" hidden>
+  <header class="bar">
+    <button class="back" id="btn-quit" aria-label="Quitter">✕</button>
+    <h2 id="g-title"></h2>
+    <span class="progress" id="g-progress"></span>
+  </header>
+  <div class="hud">
+    <span class="score"><span id="g-score">0</span> pts</span>
+    <span class="combo" id="g-combo"></span>
+  </div>
+  <div class="timer"><div class="timer-bar" id="g-timer"></div></div>
+  <div class="staff-card" id="g-staff"></div>
+  <p class="feedback" id="g-feedback" aria-live="polite"></p>
+  <div id="g-input"></div>
+</section>
+
+<!-- Résultats -->
+<section class="screen" id="results" hidden>
+  <header class="bar"><span></span><h2 id="r-title"></h2><span></span></header>
+  <div class="stars" id="r-stars"></div>
+  <p class="result-msg" id="r-msg"></p>
+  <div class="numbers">
+    <div><strong id="r-acc"></strong><span>précision</span></div>
+    <div><strong id="r-time"></strong><span>temps moyen</span></div>
+    <div><strong id="r-combo"></strong><span>meilleure série</span></div>
+    <div><strong id="r-score"></strong><span id="r-score-label">points</span></div>
+  </div>
+  <div id="r-missed"></div>
+  <div class="menu">
+    <button class="btn primary" id="btn-next" hidden>Niveau suivant</button>
+    <button class="btn" id="btn-replay">Rejouer</button>
+    <button class="btn ghost" data-go="home">Menu</button>
+  </div>
+</section>
+
+<!-- Statistiques -->
+<section class="screen" id="stats" hidden>
+  <header class="bar"><button class="back" data-go="home" aria-label="Retour">‹</button><h2>Mes statistiques</h2><span></span></header>
+  <p class="muted center" id="s-summary"></p>
+  <div class="legend"><span class="dot ok"></span>maîtrisée <span class="dot warn"></span>à revoir <span class="dot bad"></span>difficile <span class="dot none"></span>pas encore vue</div>
+  <h3>Clé de sol</h3>
+  <div class="staff-card wide" id="s-sol"></div>
+  <h3>Clé de fa</h3>
+  <div class="staff-card wide" id="s-fa"></div>
+  <h3>Notes difficiles</h3>
+  <div class="hard-grid" id="s-hard"></div>
+  <div class="menu">
+    <button class="btn primary" id="btn-train">Entraîner mes notes difficiles</button>
+  </div>
+</section>
+
+<!-- Mode libre -->
+<section class="screen" id="free" hidden>
+  <header class="bar"><button class="back" data-go="home" aria-label="Retour">‹</button><h2>Mode libre</h2><span></span></header>
+  <div class="form">
+    <label>Clés</label>
+    <div class="seg" data-free="clefs">
+      <button data-value="sol">Sol</button><button data-value="fa">Fa</button>
+      <button data-value="both">Les deux</button><button data-value="grand">Grand portée</button>
+    </div>
+    <div id="f-ledger-row">
+      <label>Lignes supplémentaires</label>
+      <div class="seg" data-free="ledger">
+        <button data-value="false">Non</button><button data-value="true">Oui</button>
+      </div>
+    </div>
+    <label>Altérations</label>
+    <div class="seg" data-free="accs">
+      <button data-value="none">Aucune</button><button data-value="sharps">♯</button>
+      <button data-value="flats">♭</button><button data-value="both">♯ et ♭</button>
+    </div>
+    <label>Temps par note</label>
+    <div class="seg" data-free="time">
+      <button data-value="0">Sans</button><button data-value="8">8 s</button>
+      <button data-value="5">5 s</button><button data-value="3">3 s</button>
+    </div>
+  </div>
+  <div class="menu"><button class="btn primary big" id="btn-free-start">C’est parti</button></div>
+</section>
+
+<!-- Réglages -->
+<section class="screen" id="settings" hidden>
+  <header class="bar"><button class="back" data-go="home" aria-label="Retour">‹</button><h2>Réglages</h2><span></span></header>
+  <div class="form">
+    <label>Répondre avec</label>
+    <div class="seg" id="set-input">
+      <button data-value="buttons">Noms de notes</button><button data-value="keyboard">Clavier de piano</button>
+    </div>
+    <p class="muted small">Avec le clavier, une touche noire vaut le dièse comme le bémol (Do♯ = Ré♭).</p>
+  </div>
+  <div class="menu"><button class="btn danger" id="btn-reset">Réinitialiser la progression</button></div>
+</section>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

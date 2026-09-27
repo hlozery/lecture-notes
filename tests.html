@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>Tests</title>
+<style>body{font:15px system-ui;padding:16px}.ok{color:#16a34a}.ko{color:#dc2626;font-weight:700}</style></head>
+<body>
+<h1 id="sum">Tests…</h1>
+<ul id="out"></ul>
+<script type="module">
+import * as M from './js/music.js';
+import * as L from './js/levels.js';
+import * as S from './js/stats.js';
+
+const results = [];
+const eq = (label, got, want) => results.push([label, JSON.stringify(got) === JSON.stringify(want), got, want]);
+const n = M.note;
+const [DO, RE, MI, FA, SOL, LA, SI] = [0, 1, 2, 3, 4, 5, 6];
+
+// Positions sur la portée
+eq('Sol : ligne du bas = Mi4', M.staffPos(n(MI, 4), 'sol'), -4);
+eq('Sol : ligne du haut = Fa5', M.staffPos(n(FA, 5), 'sol'), 4);
+eq('Sol : 2e ligne = Sol4', M.staffPos(n(SOL, 4), 'sol'), -2);
+eq('Fa : ligne du haut = La3', M.staffPos(n(LA, 3), 'fa'), 4);
+eq('Fa : ligne du bas = Sol2', M.staffPos(n(SOL, 2), 'fa'), -4);
+eq('Fa : 4e ligne = Fa3', M.staffPos(n(FA, 3), 'fa'), 2);
+eq('Do4 en sol : 1 ligne supp. dessous', M.ledgerLines(M.staffPos(n(DO, 4), 'sol')), [-6]);
+eq('Do4 en fa : 1 ligne supp. dessus', M.ledgerLines(M.staffPos(n(DO, 4), 'fa')), [6]);
+eq('Ré4 en sol : aucune ligne supp. (juste sous la portée)', M.ledgerLines(M.staffPos(n(RE, 4), 'sol')), []);
+eq('Do6 en sol : 2 lignes supp.', M.ledgerLines(M.staffPos(n(DO, 6), 'sol')), [6, 8]);
+eq('Mi2 en fa : sur la 1re ligne supp.', M.ledgerLines(M.staffPos(n(MI, 2), 'fa')), [-6]);
+eq('Do2 en fa : 2 lignes supp.', M.ledgerLines(M.staffPos(n(DO, 2), 'fa')), [-6, -8]);
+
+// Noms et hauteurs
+eq('Nom Sol dièse', M.noteName(n(SOL, 4, 1)), 'Sol dièse');
+eq('Nom Si bémol', M.noteName(n(SI, 3, -1)), 'Si bémol');
+eq('Ré♯ et Mi♭ même touche', M.pitchClass(n(RE, 4, 1)), M.pitchClass(n(MI, 4, -1)));
+eq('Do4 = MIDI 60', M.midi(n(DO, 4)), 60);
+eq('La4 = MIDI 69', M.midi(n(LA, 4)), 69);
+eq('Mi♯ ambigu', M.isAmbiguous(n(MI, 4, 1)), true);
+eq('Fa♯ non ambigu', M.isAmbiguous(n(FA, 4, 1)), false);
+eq('Clé aller-retour', M.parseKey(M.noteKey('fa', n(SI, 2, -1))), { clef: 'fa', note: n(SI, 2, -1) });
+
+// Niveaux
+eq('Niveau 1 : 9 notes (Mi4 à Fa5)', L.buildPool(L.LEVELS[0]).length, 9);
+eq('Niveau 6 : pas de Mi♯ ni Si♯', L.buildPool(L.LEVELS[5]).some((p) => M.isAmbiguous(p.note)), false);
+eq('Niveau 9 : Do4 sur les deux portées', L.buildPool(L.LEVELS[8]).filter((p) => M.diatonic(p.note) === 28).map((p) => p.clef).sort(), ['fa', 'sol']);
+eq('Étoiles : 80 % = 0', L.starsFor(0.8, 1000, 8), 0);
+eq('Étoiles : 90 % = 1', L.starsFor(0.9, 1000, 8), 1);
+eq('Étoiles : 100 % lent = 2', L.starsFor(1, 5000, 8), 2);
+eq('Étoiles : 100 % rapide = 3', L.starsFor(1, 2000, 8), 3);
+eq('Niveau 2 verrouillé au départ', L.isUnlocked(2, {}), false);
+eq('Niveau 2 ouvert après 1 étoile au 1', L.isUnlocked(2, { 1: { stars: 1 } }), true);
+
+// Statistiques
+const stats = {};
+S.recordAnswer(stats, 'sol:30:0', false, 3000);
+S.recordAnswer(stats, 'sol:30:0', true, 2000);
+S.recordAnswer(stats, 'sol:31:0', true, 1000);
+eq('Note ratée plus lourde', S.weightFor(stats['sol:30:0'], 8000) > S.weightFor(stats['sol:31:0'], 8000), true);
+eq('Notes difficiles', S.hardest(stats), ['sol:30:0']);
+const pool = L.buildPool(L.LEVELS[0]);
+const prev = M.noteKey(pool[0].clef, pool[0].note);
+eq('Pas deux fois la même note', Array.from({ length: 200 }, () => S.pickWeighted(pool, {}, prev, 0)).some((p) => M.noteKey(p.clef, p.note) === prev), false);
+
+const out = document.getElementById('out');
+for (const [label, ok, got, want] of results) {
+  const li = document.createElement('li');
+  li.className = ok ? 'ok' : 'ko';
+  li.textContent = ok ? `✓ ${label}` : `✗ ${label} — obtenu ${JSON.stringify(got)}, attendu ${JSON.stringify(want)}`;
+  out.append(li);
+}
+const failed = results.filter((r) => !r[1]).length;
+document.getElementById('sum').textContent = failed ? `${failed} échec(s) sur ${results.length}` : `${results.length} tests OK`;
+</script>
+</body>
+</html>
