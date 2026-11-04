@@ -3,10 +3,14 @@ const KEY = 'lecture-notes:v1';
 
 function defaults() {
   return {
+    mode: 'notes', // onglet de l'accueil : 'notes' | 'chords'
     progress: {}, // { [idNiveau]: { stars, best } }
     stats: {},
     settings: { input: 'buttons' },
-    free: { clefs: 'sol', ledger: false, accs: 'none', time: 8 },
+    free: {
+      content: 'notes', clefs: 'sol', ledger: false, accs: 'none', time: 8,
+      chordTypes: 'triads', inversions: false, chordAcc: false,
+    },
   };
 }
 
@@ -15,6 +19,7 @@ export function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
     if (saved) {
+      if (saved.mode) data.mode = saved.mode;
       Object.assign(data.progress, saved.progress);
       Object.assign(data.stats, saved.stats);
       Object.assign(data.settings, saved.settings);

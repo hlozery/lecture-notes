@@ -1,9 +1,52 @@
-// Boucle de jeu : tirage des notes, chrono, score, série, fin de partie.
-import { pitchClass, noteName, noteKey } from './music.js';
+// Boucle de jeu : tirage des notes / accords, chrono, score, série, fin de partie.
+import { pitchClass, noteName } from './music.js';
+import { QUALITY_ORDER, INVERSION_NAMES, chordName } from './chords.js';
 import { renderStaff } from './staff.js';
 import { createInput } from './input.js';
 import { recordAnswer, pickWeighted } from './stats.js';
 import { NOTES_PER_GAME } from './levels.js';
+
+export function itemName(item) {
+  if (item.kind !== 'chord') return noteName(item.note);
+  return item.inversion ? `${chordName(item)} · ${INVERSION_NAMES[item.inversion]}` : chordName(item);
+}
+
+function isCorrect(item, a) {
+  if (!a) return false;
+  if (item.kind === 'chord') {
+    return a.letter === item.root.letter && a.acc === item.root.acc && a.quality === item.quality;
+  }
+  return 'pc' in a ? a.pc === pitchClass(item.note) : a.letter === item.note.letter && a.acc === item.note.acc;
+}
+
+// Zone de réponse adaptée à chaque type d'élément présent dans la partie.
+function createInputs(container, pool, settings, onAnswer) {
+  container.innerHTML = '';
+  const uniq = (xs) => [...new Set(xs)];
+  const notes = pool.filter((p) => p.kind !== 'chord');
+  const chords = pool.filter((p) => p.kind === 'chord');
+  const inputs = {};
+  const add = (kind, opts) => {
+    const box = document.createElement('div');
+    container.append(box);
+    inputs[kind] = { box, ...createInput(box, { onAnswer, ...opts }) };
+  };
+  if (notes.length) add('note', { mode: settings.input, accs: uniq(notes.map((p) => p.note.acc)) });
+  if (chords.length) {
+    add('chord', {
+      mode: 'chord',
+      accs: uniq(chords.map((p) => p.root.acc)),
+      qualities: QUALITY_ORDER.filter((q) => chords.some((p) => p.quality === q)),
+    });
+  }
+  return {
+    show(kind) {
+      for (const [k, input] of Object.entries(inputs)) input.box.hidden = k !== kind;
+      inputs[kind].reset();
+      return inputs[kind];
+    },
+  };
+}
 
 /**
  * els : { title, progress, score, combo, timer, staff, feedback, input }
@@ -13,20 +56,22 @@ export function startGame({ level, pool, data, els, onAnswered, onEnd }) {
   const limitMs = (level.time || 0) * 1000;
   const st = {
     i: 0, score: 0, combo: 0, bestCombo: 0, correct: 0, times: [], missed: [],
-    current: null, prevKey: null, t0: 0, raf: 0, timeout: 0, locked: true, over: false,
+    current: null, input: null, t0: 0, raf: 0, timeout: 0, locked: true, over: false,
   };
 
   els.title.textContent = level.title;
   els.timer.parentElement.hidden = !limitMs;
-  const input = createInput(els.input, { mode: data.settings.input, accs: level.accs, onAnswer: answer });
+  const inputs = createInputs(els.input, pool, data.settings, answer);
+  // Notes et accords mélangés : une chance sur deux pour chaque type, quel que soit leur nombre.
+  const byKind = ['note', 'chord'].map((k) => pool.filter((p) => (p.kind === 'chord') === (k === 'chord'))).filter((g) => g.length);
   next();
 
   function draw(state) {
-    const { clef, note } = st.current;
+    const item = st.current;
     const color = state === 'ok' ? 'var(--ok)' : state === 'bad' ? 'var(--bad)' : null;
     els.staff.innerHTML = renderStaff({
-      layout: level.layout === 'grand' ? 'grand' : clef,
-      notes: [{ clef, note, color, cls: state === 'new' ? 'enter' : state }],
+      layout: level.layout === 'grand' ? 'grand' : item.clef,
+      notes: [{ ...item, color, cls: state === 'new' ? 'enter' : state }],
       width: 210,
       crop: false,
     });
@@ -42,14 +87,14 @@ export function startGame({ level, pool, data, els, onAnswered, onEnd }) {
 
   function next() {
     if (st.i >= NOTES_PER_GAME) return finish();
-    st.current = pickWeighted(pool, data.stats, st.prevKey, limitMs);
-    st.prevKey = noteKey(st.current.clef, st.current.note);
+    const group = byKind[Math.floor(Math.random() * byKind.length)];
+    st.current = pickWeighted(group, data.stats, st.current?.key, limitMs);
     st.i++;
     hud();
     draw('new');
     els.feedback.textContent = '';
     els.feedback.className = 'feedback';
-    input.reset();
+    st.input = inputs.show(st.current.kind === 'chord' ? 'chord' : 'note');
     st.locked = false;
     st.t0 = performance.now();
     if (limitMs) tick();
@@ -69,9 +114,9 @@ export function startGame({ level, pool, data, els, onAnswered, onEnd }) {
     st.locked = true;
     cancelAnimationFrame(st.raf);
     const ms = performance.now() - st.t0;
-    const { clef, note } = st.current;
-    const ok = !!a && ('pc' in a ? a.pc === pitchClass(note) : a.letter === note.letter && a.acc === note.acc);
-    recordAnswer(data.stats, noteKey(clef, note), ok, ms);
+    const item = st.current;
+    const ok = isCorrect(item, a);
+    recordAnswer(data.stats, item.key, ok, ms);
 
     if (ok) {
       st.correct++;
@@ -81,20 +126,22 @@ export function startGame({ level, pool, data, els, onAnswered, onEnd }) {
       const speed = limitMs ? Math.round(100 * Math.max(0, 1 - ms / limitMs)) : 0;
       const gain = (100 + speed) * multiplier(st.combo);
       st.score += gain;
-      els.feedback.textContent = `${noteName(note)} ✓  +${gain}`;
+      els.feedback.textContent = `${itemName(item)} ✓  +${gain}`;
       els.feedback.className = 'feedback ok';
       draw('ok');
     } else {
       st.combo = 0;
-      st.missed.push(st.current);
-      els.feedback.textContent = `${a ? 'Non' : 'Temps écoulé'} — c’était ${noteName(note)}`;
+      st.missed.push(item);
+      els.feedback.textContent = `${a ? 'Non' : 'Temps écoulé'} — c’était ${itemName(item)}`;
       els.feedback.className = 'feedback bad';
       draw('bad');
-      input.showAnswer(note);
+      if (item.kind === 'chord') st.input.showAnswer(item.root, item.quality);
+      else st.input.showAnswer(item.note);
     }
     hud();
     onAnswered();
-    st.timeout = setTimeout(next, ok ? 600 : 1600);
+    // Un peu plus de temps pour lire la correction d'un accord.
+    st.timeout = setTimeout(next, ok ? 600 : item.kind === 'chord' ? 2200 : 1600);
   }
 
   function finish() {

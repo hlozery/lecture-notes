@@ -1,6 +1,4 @@
 // Statistiques par note et tirage pondéré vers les notes difficiles.
-import { noteKey } from './music.js';
-
 const RECENT = 6;
 
 // entry = { n: essais, e: erreurs, t: temps moyen (ms, bonnes réponses), r: derniers résultats (1 = raté) }
@@ -29,8 +27,8 @@ export function weightFor(s, limitMs) {
 }
 
 export function pickWeighted(pool, stats, prevKey, limitMs, rng = Math.random) {
-  const candidates = pool.length > 1 ? pool.filter((p) => noteKey(p.clef, p.note) !== prevKey) : pool;
-  const weights = candidates.map((p) => weightFor(stats[noteKey(p.clef, p.note)], limitMs));
+  const candidates = pool.length > 1 ? pool.filter((p) => p.key !== prevKey) : pool;
+  const weights = candidates.map((p) => weightFor(stats[p.key], limitMs));
   let x = rng() * weights.reduce((a, b) => a + b, 0);
   for (let i = 0; i < candidates.length; i++) {
     x -= weights[i];
@@ -39,10 +37,10 @@ export function pickWeighted(pool, stats, prevKey, limitMs, rng = Math.random) {
   return candidates[candidates.length - 1];
 }
 
-// Clés des notes les plus ratées récemment (au moins une erreur récente).
-export function hardest(stats, count = 10) {
+// Clés des éléments les plus ratés récemment (au moins une erreur récente), filtrables par clé.
+export function hardest(stats, count = 10, keep = () => true) {
   return Object.entries(stats)
-    .filter(([, s]) => recentErrorRate(s) > 0)
+    .filter(([key, s]) => keep(key) && recentErrorRate(s) > 0)
     .sort(([, a], [, b]) => recentErrorRate(b) - recentErrorRate(a) || b.e - a.e)
     .slice(0, count)
     .map(([key]) => key);

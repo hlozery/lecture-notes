@@ -37,23 +37,75 @@ function flat(x, y) {
   </g>`;
 }
 
-function noteSvg(x, cy, pos, n, { color, cls = '', stem = true }) {
-  const y = cy - pos * SP;
-  let s = `<g class="note ${cls}"${color ? ` style="color:${color}"` : ''}>`;
-  for (const p of ledgerLines(pos)) {
-    const ly = cy - p * SP;
-    s += `<line x1="${x - 15}" y1="${ly}" x2="${x + 15}" y2="${ly}" stroke="currentColor" stroke-width="1.6"/>`;
+const HEAD_SHIFT = 17; // décalage d'une tête de note dans une seconde
+
+// Hampe vers le haut si la note la plus éloignée de la ligne du milieu est en dessous.
+function stemUp(positions) {
+  return Math.min(...positions) + Math.max(...positions) < 0;
+}
+
+// Disposition d'une note ou d'un accord : têtes (décalées dans les secondes) et colonnes d'altérations.
+function layoutHeads(clef, notes) {
+  const heads = notes
+    .map((n) => ({ n, pos: staffPos(n, clef), dx: 0 }))
+    .sort((a, b) => a.pos - b.pos);
+  const positions = heads.map((h) => h.pos);
+  const up = stemUp(positions);
+
+  // Secondes : la tête suivante passe de l'autre côté de la hampe (à droite si hampe en haut).
+  const walk = up ? heads : [...heads].reverse();
+  for (let i = 1; i < walk.length; i++) {
+    if (Math.abs(walk[i].pos - walk[i - 1].pos) === 1 && walk[i - 1].dx === 0) walk[i].dx = up ? HEAD_SHIFT : -HEAD_SHIFT;
   }
-  if (n.acc === 1) s += sharp(x - 24, y);
-  if (n.acc === -1) s += flat(x - 22, y);
-  s += `<ellipse cx="${x}" cy="${y}" rx="8.6" ry="6.4" transform="rotate(-20 ${x} ${y})" fill="currentColor"/>`;
+
+  // Altérations en colonnes, de haut en bas, sans chevauchement (écart d'au moins une sixte).
+  const columns = [];
+  const accs = [];
+  for (const h of [...heads].reverse()) {
+    if (!h.n.acc) continue;
+    let col = columns.findIndex((c) => c.every((p) => Math.abs(p - h.pos) >= 6));
+    if (col < 0) col = columns.push([]) - 1;
+    columns[col].push(h.pos);
+    accs.push({ pos: h.pos, acc: h.n.acc, col });
+  }
+  const left = Math.min(0, ...heads.map((h) => h.dx));
+  const right = Math.max(0, ...heads.map((h) => h.dx));
+  return {
+    heads, positions, up, left, right, accs,
+    // Encombrement horizontal autour de la position de la note (pour espacer plusieurs éléments).
+    extentLeft: -left + (columns.length ? 32 + 14 * (columns.length - 1) : 10),
+    extentRight: right + 10,
+  };
+}
+
+// Une note seule ou un accord (plusieurs têtes sur une même hampe).
+function notesSvg(x, cy, lay, { color, cls = '', stem = true }) {
+  const { heads, positions, up, left, right, accs } = lay;
+  const yOf = (pos) => cy - pos * SP;
+
+  let s = `<g class="note ${cls}"${color ? ` style="color:${color}"` : ''}>`;
+  const ledgers = new Set([...ledgerLines(positions[0]), ...ledgerLines(positions[positions.length - 1])]);
+  for (const p of ledgers) {
+    s += `<line x1="${x - 15 + left}" y1="${yOf(p)}" x2="${x + 15 + right}" y2="${yOf(p)}" stroke="currentColor" stroke-width="1.6"/>`;
+  }
+  for (const a of accs) {
+    const ax = x + left - 24 - a.col * 14;
+    s += a.acc === 1 ? sharp(ax, yOf(a.pos)) : flat(ax + 2, yOf(a.pos));
+  }
+  for (const h of heads) {
+    const hx = x + h.dx, y = yOf(h.pos);
+    s += `<ellipse cx="${hx}" cy="${y}" rx="8.6" ry="6.4" transform="rotate(-20 ${hx} ${y})" fill="currentColor"/>`;
+  }
   if (stem) {
-    s += pos < 0
-      ? `<line x1="${x + 7.8}" y1="${y - 2}" x2="${x + 7.8}" y2="${y - 54}" stroke="currentColor" stroke-width="1.7"/>`
-      : `<line x1="${x - 7.8}" y1="${y + 2}" x2="${x - 7.8}" y2="${y + 54}" stroke="currentColor" stroke-width="1.7"/>`;
+    const low = yOf(positions[0]), high = yOf(positions[positions.length - 1]);
+    s += up
+      ? `<line x1="${x + 7.8}" y1="${low - 2}" x2="${x + 7.8}" y2="${high - 54}" stroke="currentColor" stroke-width="1.7"/>`
+      : `<line x1="${x - 7.8}" y1="${high + 2}" x2="${x - 7.8}" y2="${low + 54}" stroke="currentColor" stroke-width="1.7"/>`;
   }
   return s + '</g>';
 }
+
+const itemNotes = (item) => item.chord || [item.note];
 
 function staffLines(cy, width) {
   let s = '';
@@ -71,7 +123,7 @@ function clefSvg(clef, cy) {
 
 /**
  * layout : 'sol' | 'fa' | 'grand'
- * notes  : [{ clef, note, color?, cls? }] — en grand portée, clef choisit la portée.
+ * notes  : [{ clef, note | chord, color?, cls? }] — chord = tableau de notes ; en grand portée, clef choisit la portée.
  * width  : largeur minimale ; une note seule est centrée.
  * crop   : recadrer au plus juste (false = cadre fixe, pour que la portée ne bouge pas en jeu).
  */
@@ -79,10 +131,16 @@ export function renderStaff({ layout, notes = [], width = 260, spacing = 40, ste
   const grand = layout === 'grand';
   const cys = grand ? { sol: 92, fa: 220 } : { [layout]: 100 };
   const height = grand ? 316 : 200;
-  const w = Math.max(width, FIRST_NOTE_X + notes.length * spacing + 10);
-  const xs = notes.length === 1
-    ? [Math.round((FIRST_NOTE_X - 20 + w) / 2)]
-    : notes.map((_, i) => FIRST_NOTE_X + 8 + i * spacing);
+  const lays = notes.map((item) => layoutHeads(item.clef, itemNotes(item)));
+  // Plusieurs éléments : chacun prend la place dont il a besoin (altérations comprises) + un écart fixe.
+  let cursor = FIRST_NOTE_X - 2;
+  const placed = lays.map((lay) => {
+    const x = cursor + lay.extentLeft;
+    cursor = x + lay.extentRight + (spacing - 20);
+    return x;
+  });
+  const w = Math.max(width, cursor + 10);
+  const xs = notes.length === 1 ? [Math.round((FIRST_NOTE_X - 20 + w) / 2)] : placed;
 
   let body = '';
   for (const [clef, cy] of Object.entries(cys)) body += staffLines(cy, w) + clefSvg(clef, cy);
@@ -94,7 +152,7 @@ export function renderStaff({ layout, notes = [], width = 260, spacing = 40, ste
   }
   notes.forEach((item, i) => {
     const staff = grand ? item.clef : layout;
-    body += noteSvg(xs[i], cys[staff], staffPos(item.note, item.clef), item.note, { color: item.color, cls: item.cls, stem });
+    body += notesSvg(xs[i], cys[staff], lays[i], { color: item.color, cls: item.cls, stem });
   });
 
   // Portée simple : cadrage vertical au plus juste (clé + notes, hampes comprises).
@@ -103,10 +161,10 @@ export function renderStaff({ layout, notes = [], width = 260, spacing = 40, ste
     const cy = cys[layout];
     let top = cy - 64, bottom = cy + 64;
     for (const item of notes) {
-      const y = cy - staffPos(item.note, item.clef) * SP;
-      const up = stem && staffPos(item.note, item.clef) < 0;
-      top = Math.min(top, y - (up ? 60 : 24));
-      bottom = Math.max(bottom, y + (stem && !up ? 60 : 12));
+      const positions = itemNotes(item).map((n) => staffPos(n, item.clef));
+      const up = stem && stemUp(positions);
+      top = Math.min(top, cy - Math.max(...positions) * SP - (up ? 60 : 24));
+      bottom = Math.max(bottom, cy - Math.min(...positions) * SP + (stem && !up ? 60 : 12));
     }
     y0 = Math.floor(top);
     h = Math.ceil(bottom) - y0;

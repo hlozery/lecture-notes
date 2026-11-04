@@ -26,6 +26,9 @@
     <p class="muted">Clé de sol · Clé de fa</p>
     <p class="star-total" id="star-total"></p>
   </div>
+  <div class="seg mode-tabs" id="mode-tabs">
+    <button data-value="notes">Notes</button><button data-value="chords">Accords</button>
+  </div>
   <div class="menu">
     <button class="btn primary big" id="btn-continue">Jouer</button>
     <button class="btn" data-go="levels">Niveaux</button>
@@ -37,7 +40,7 @@
 
 <!-- Niveaux -->
 <section class="screen" id="levels" hidden>
-  <header class="bar"><button class="back" data-go="home" aria-label="Retour">‹</button><h2>Niveaux</h2><span></span></header>
+  <header class="bar"><button class="back" data-go="home" aria-label="Retour">‹</button><h2 id="levels-title">Niveaux</h2><span></span></header>
   <ol class="level-list" id="level-list"></ol>
 </section>
 
@@ -82,11 +85,19 @@
   <header class="bar"><button class="back" data-go="home" aria-label="Retour">‹</button><h2>Mes statistiques</h2><span></span></header>
   <p class="muted center" id="s-summary"></p>
   <div class="legend"><span class="dot ok"></span>maîtrisée <span class="dot warn"></span>à revoir <span class="dot bad"></span>difficile <span class="dot none"></span>pas encore vue</div>
-  <h3>Clé de sol</h3>
-  <div class="staff-card wide" id="s-sol"></div>
-  <h3>Clé de fa</h3>
-  <div class="staff-card wide" id="s-fa"></div>
-  <h3>Notes difficiles</h3>
+  <div id="s-notes-overview">
+    <h3>Clé de sol</h3>
+    <div class="staff-card wide" id="s-sol"></div>
+    <h3>Clé de fa</h3>
+    <div class="staff-card wide" id="s-fa"></div>
+  </div>
+  <div id="s-chords-overview">
+    <h3>Par type d’accord</h3>
+    <div class="tiles" id="s-qualities"></div>
+    <h3>Par renversement</h3>
+    <div class="tiles" id="s-inversions"></div>
+  </div>
+  <h3 id="s-hard-title">Notes difficiles</h3>
   <div class="hard-grid" id="s-hard"></div>
   <div class="menu">
     <button class="btn primary" id="btn-train">Entraîner mes notes difficiles</button>
@@ -97,21 +108,43 @@
 <section class="screen" id="free" hidden>
   <header class="bar"><button class="back" data-go="home" aria-label="Retour">‹</button><h2>Mode libre</h2><span></span></header>
   <div class="form">
+    <label>Contenu</label>
+    <div class="seg" data-free="content">
+      <button data-value="notes">Notes</button><button data-value="chords">Accords</button>
+      <button data-value="both">Les deux</button>
+    </div>
     <label>Clés</label>
     <div class="seg" data-free="clefs">
       <button data-value="sol">Sol</button><button data-value="fa">Fa</button>
       <button data-value="both">Les deux</button><button data-value="grand">Grand portée</button>
     </div>
-    <div id="f-ledger-row">
-      <label>Lignes supplémentaires</label>
-      <div class="seg" data-free="ledger">
-        <button data-value="false">Non</button><button data-value="true">Oui</button>
+    <div class="form" id="f-notes-opts">
+      <div class="form" id="f-ledger-row">
+        <label>Notes : lignes supplémentaires</label>
+        <div class="seg" data-free="ledger">
+          <button data-value="false">Non</button><button data-value="true">Oui</button>
+        </div>
+      </div>
+      <label>Notes : altérations</label>
+      <div class="seg" data-free="accs">
+        <button data-value="none">Aucune</button><button data-value="sharps">♯</button>
+        <button data-value="flats">♭</button><button data-value="both">♯ et ♭</button>
       </div>
     </div>
-    <label>Altérations</label>
-    <div class="seg" data-free="accs">
-      <button data-value="none">Aucune</button><button data-value="sharps">♯</button>
-      <button data-value="flats">♭</button><button data-value="both">♯ et ♭</button>
+    <div class="form" id="f-chord-opts">
+      <label>Accords : types</label>
+      <div class="seg" data-free="chordTypes">
+        <button data-value="triads">Maj / min</button><button data-value="sevenths">Septièmes</button>
+        <button data-value="all">Tous</button>
+      </div>
+      <label>Accords : renversements</label>
+      <div class="seg" data-free="inversions">
+        <button data-value="false">Non</button><button data-value="true">Oui</button>
+      </div>
+      <label>Accords : fondamentales altérées</label>
+      <div class="seg" data-free="chordAcc">
+        <button data-value="false">Non</button><button data-value="true">Oui (Si♭, Fa♯…)</button>
+      </div>
     </div>
     <label>Temps par note</label>
     <div class="seg" data-free="time">
@@ -130,7 +163,8 @@
     <div class="seg" id="set-input">
       <button data-value="buttons">Noms de notes</button><button data-value="keyboard">Clavier de piano</button>
     </div>
-    <p class="muted small">Avec le clavier, une touche noire vaut le dièse comme le bémol (Do♯ = Ré♭).</p>
+    <p class="muted small">Avec le clavier, une touche noire vaut le dièse comme le bémol (Do♯ = Ré♭).
+      Les accords se répondent toujours par leur nom (fondamentale + type).</p>
   </div>
   <div class="menu"><button class="btn danger" id="btn-reset">Réinitialiser la progression</button></div>
 </section>

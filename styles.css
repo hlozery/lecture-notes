@@ -189,3 +189,25 @@ h3 { font-size: 15px; margin: 8px 0 0; color: var(--muted); text-transform: uppe
 .seg { display: flex; background: var(--line); border-radius: 12px; padding: 3px; gap: 3px; }
 .seg button { flex: 1; border: 0; background: transparent; border-radius: 10px; padding: 10px 4px; font-size: 15px; font-weight: 600; }
 .seg button.selected { background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+
+/* Onglets Notes / Accords */
+.mode-tabs button { padding: 12px 4px; font-size: 16px; }
+.mode-tabs button.selected { background: var(--accent); color: var(--accent-ink); }
+
+/* Réponse : qualité d'accord */
+.quality-bar { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 5px; }
+.quality-btn {
+  height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--card);
+  font-weight: 700; font-size: 15px; padding: 0;
+}
+.quality-btn.selected { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.quality-btn:active { background: var(--accent); color: var(--accent-ink); }
+
+/* Statistiques des accords */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.tile {
+  background: var(--card); border-radius: 12px; padding: 10px 6px; text-align: center;
+  border-top: 4px solid var(--c, var(--muted));
+}
+.tile strong { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.tile span { color: var(--muted); font-size: 12px; }

@@ -9,6 +9,7 @@
 import * as M from './js/music.js';
 import * as L from './js/levels.js';
 import * as S from './js/stats.js';
+import * as C from './js/chords.js';
 
 const results = [];
 const eq = (label, got, want) => results.push([label, JSON.stringify(got) === JSON.stringify(want), got, want]);
@@ -47,8 +48,33 @@ eq('Étoiles : 80 % = 0', L.starsFor(0.8, 1000, 8), 0);
 eq('Étoiles : 90 % = 1', L.starsFor(0.9, 1000, 8), 1);
 eq('Étoiles : 100 % lent = 2', L.starsFor(1, 5000, 8), 2);
 eq('Étoiles : 100 % rapide = 3', L.starsFor(1, 2000, 8), 3);
-eq('Niveau 2 verrouillé au départ', L.isUnlocked(2, {}), false);
-eq('Niveau 2 ouvert après 1 étoile au 1', L.isUnlocked(2, { 1: { stars: 1 } }), true);
+eq('Niveau 2 verrouillé au départ', L.isUnlocked(L.LEVELS[1], L.LEVELS, {}), false);
+eq('Niveau 2 ouvert après 1 étoile au 1', L.isUnlocked(L.LEVELS[1], L.LEVELS, { 1: { stars: 1 } }), true);
+eq('Accords : niveau 1 ouvert', L.isUnlocked(L.CHORD_LEVELS[0], L.CHORD_LEVELS, {}), true);
+eq('Accords : niveau 2 ouvert après c1', L.isUnlocked(L.CHORD_LEVELS[1], L.CHORD_LEVELS, { c1: { stars: 2 } }), true);
+
+// Accords
+const names = (ns) => ns.map(M.shortName).join(' ');
+eq('Do majeur = Do Mi Sol', names(C.spellChord(n(DO, 4), 'maj')), 'Do Mi Sol');
+eq('Ré mineur = Ré Fa La', names(C.spellChord(n(RE, 4), 'min')), 'Ré Fa La');
+eq('Si majeur = Si Ré♯ Fa♯', names(C.spellChord(n(SI, 3), 'maj')), 'Si Ré♯ Fa♯');
+eq('La♭ mineur = La♭ Do♭ Mi♭', names(C.spellChord(n(LA, 4, -1), 'min')), 'La♭ Do♭ Mi♭');
+eq('Sol 7 = Sol Si Ré Fa', names(C.spellChord(n(SOL, 4), 'dom7')), 'Sol Si Ré Fa');
+eq('Do maj7 = Do Mi Sol Si', names(C.spellChord(n(DO, 4), 'maj7')), 'Do Mi Sol Si');
+eq('La m7 = La Do Mi Sol', names(C.spellChord(n(LA, 4), 'min7')), 'La Do Mi Sol');
+eq('Do majeur 1er renv. : Mi à la basse', names(C.voiceChord({ letter: DO, acc: 0 }, 'maj', 1, 'sol')), 'Mi Sol Do');
+eq('Do majeur 2e renv. : Sol à la basse', names(C.voiceChord({ letter: DO, acc: 0 }, 'maj', 2, 'sol')), 'Sol Do Mi');
+eq('Sol 7 3e renv. : Fa à la basse', names(C.voiceChord({ letter: SOL, acc: 0 }, 'dom7', 3, 'fa')), 'Fa Sol Si Ré');
+eq('Pas de 3e renversement pour une triade', C.voiceChord({ letter: DO, acc: 0 }, 'maj', 3, 'sol'), null);
+eq('Nom : Si bémol maj7', C.chordName({ root: { letter: SI, acc: -1 }, quality: 'maj7' }), 'Si bémol maj7');
+eq('Abrégé : Rém', C.chordShort({ root: { letter: RE, acc: 0 }, quality: 'min' }), 'Rém');
+const allChords = L.CHORD_LEVELS.flatMap((lvl) => L.buildPool(lvl));
+eq('Aucune double altération', allChords.some((c) => c.chord.some((x) => Math.abs(x.acc) > 1)), false);
+eq('Basse dans le registre (sol : Do4–Si4, fa : Mi2–Ré3)',
+  allChords.every((c) => { const b = M.diatonic(c.chord[0]) - C.CHORD_BASS[c.clef]; return b >= 0 && b < 7; }), true);
+eq('Clé d’accord aller-retour', C.parseChordKey('ch:fa:6:-1:min7:2').key, 'ch:fa:6:-1:min7:2');
+eq('Mode libre « les deux » : notes et accords',
+  [...new Set(L.buildPool(L.freeLevel({ content: 'both', clefs: 'sol', accs: 'none', chordTypes: 'all', time: 8 })).map((p) => p.kind))].sort(), ['chord', 'note']);
 
 // Statistiques
 const stats = {};
@@ -58,8 +84,9 @@ S.recordAnswer(stats, 'sol:31:0', true, 1000);
 eq('Note ratée plus lourde', S.weightFor(stats['sol:30:0'], 8000) > S.weightFor(stats['sol:31:0'], 8000), true);
 eq('Notes difficiles', S.hardest(stats), ['sol:30:0']);
 const pool = L.buildPool(L.LEVELS[0]);
-const prev = M.noteKey(pool[0].clef, pool[0].note);
-eq('Pas deux fois la même note', Array.from({ length: 200 }, () => S.pickWeighted(pool, {}, prev, 0)).some((p) => M.noteKey(p.clef, p.note) === prev), false);
+const prev = pool[0].key;
+eq('Pas deux fois la même note', Array.from({ length: 200 }, () => S.pickWeighted(pool, {}, prev, 0)).some((p) => p.key === prev), false);
+eq('Notes difficiles filtrées par type', S.hardest({ ...stats, 'ch:sol:0:0:maj:0': { n: 1, e: 1, t: 0, r: [1] } }, 10, C.isChordKey), ['ch:sol:0:0:maj:0']);
 
 const out = document.getElementById('out');
 for (const [label, ok, got, want] of results) {
