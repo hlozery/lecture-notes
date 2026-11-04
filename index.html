@@ -166,10 +166,15 @@
     </div>
     <p class="muted small" id="set-input-help"></p>
     <div class="form" id="set-mic">
-      <label>Octave</label>
+      <label>Octave des notes</label>
       <div class="seg" id="set-mic-octave">
         <button data-value="exact">Exacte</button><button data-value="any">Peu importe</button>
       </div>
+      <label>Renversement des accords</label>
+      <div class="seg" id="set-mic-inversion">
+        <button data-value="exact">Exigé</button><button data-value="any">Peu importe</button>
+      </div>
+      <p class="muted small">Exigé : la bonne note doit être à la basse. Peu importe : seules les notes de l’accord comptent.</p>
       <label>Sensibilité du micro</label>
       <div class="seg" id="set-mic-sensitivity">
         <button data-value="low">Faible</button><button data-value="medium">Moyenne</button><button data-value="high">Forte</button>
@@ -181,7 +186,18 @@
         <button data-value="on">Oui</button><button data-value="off">Non (son brut)</button>
       </div>
       <p class="muted small">Oui : l’iPhone monte le volume du micro, comme pendant un appel. Si les notes sont mal reconnues, essaie Non.</p>
+      <label>Justesse des notes</label>
+      <div class="seg" id="set-mic-precision">
+        <button data-value="loose">Souple</button><button data-value="normal">Normale</button><button data-value="strict">Stricte</button>
+      </div>
+      <p class="muted small" id="set-mic-precision-help"></p>
+      <label>Avant de compter une erreur</label>
+      <div class="seg" id="set-mic-patience">
+        <button data-value="short">Court</button><button data-value="normal">Normal</button><button data-value="long">Long</button>
+      </div>
+      <p class="muted small" id="set-mic-patience-help"></p>
       <button class="btn" id="btn-tuner">Tester et accorder le micro</button>
+      <button class="btn ghost" id="btn-mic-defaults">Réglages du micro par défaut</button>
     </div>
   </div>
   <div class="menu"><button class="btn danger" id="btn-reset">Réinitialiser la progression</button></div>
@@ -190,11 +206,12 @@
 <!-- Test du micro et accordage -->
 <section class="screen" id="tuner" hidden>
   <header class="bar"><button class="back" id="btn-tuner-back" aria-label="Retour">‹</button><h2>Tester le micro</h2><span></span></header>
-  <p class="muted center">Joue quelques notes : la bonne note doit s’afficher, et la jauge doit dépasser le trait.</p>
+  <p class="muted center">Joue quelques notes ou un accord : ce que tu joues doit s’afficher, et la jauge doit dépasser le trait.</p>
   <div class="tuner-card">
     <div class="tuner-note" id="t-note">—</div>
     <div class="tuner-scale"><span>−50</span><span>0</span><span>+50</span><div class="needle" id="t-needle"></div></div>
     <p class="muted center small" id="t-cents">&nbsp;</p>
+    <p class="center tuner-chord" id="t-chord">&nbsp;</p>
   </div>
   <div id="t-meter"></div>
   <p class="muted center small" id="t-level">&nbsp;</p>

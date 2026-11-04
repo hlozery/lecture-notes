@@ -1,7 +1,7 @@
 // Zone de réponse : boutons Do Ré Mi… (+ barre ♭ ♮ ♯, + qualité d'accord) ou mini clavier de piano.
 import { LETTERS, ACC_SYMBOL, pitchClass, fromMidi, noteName, shortName, midi } from './music.js';
 import { QUALITIES, chordName } from './chords.js';
-import { thresholdFor, openMicrophone, createListener, micErrorMessage } from './mic.js';
+import { thresholdFor, listenOptions, openMicrophone, createListener, micErrorMessage } from './mic.js';
 import { judgeChord, heardPcs } from './chord-detect.js';
 
 const WHITE_PCS = [0, 2, 4, 5, 7, 9, 11];
@@ -50,7 +50,7 @@ export function heardChordName(heard, item) {
 // Jauge + ce qu'on entend en direct. Notes : onAnswer({ midi, retry: true }) ;
 // accords : onAnswer({ chord: verdict, retry: true }) avec le verdict de chord-detect.js.
 function micInput(container, { accs, chordAccs, qualities, settings, onAnswer }) {
-  const threshold = thresholdFor(settings);
+  const { threshold, ...options } = listenOptions(settings);
   container.innerHTML = `${meterHtml()}<p class="mic-heard">Ouverture du micro…</p>`;
   const fill = container.querySelector('.meter-fill');
   const heard = container.querySelector('.mic-heard');
@@ -69,7 +69,7 @@ function micInput(container, { accs, chordAccs, qualities, settings, onAnswer })
     const target = {
       rootPc: pitchClass(item.root), quality: item.quality, bassPc: pitchClass(item.chord[0]),
     };
-    const checkBass = settings.micOctave !== 'any';
+    const checkBass = settings.micInversion !== 'any';
     const bass = shortName(item.chord[0]);
     listener.setChord((analysis) => {
       const verdict = judgeChord(analysis, target, { checkBass });
@@ -90,7 +90,7 @@ function micInput(container, { accs, chordAccs, qualities, settings, onAnswer })
       idle();
       listener = createListener(m.ctx, m.source, {
         threshold,
-        tuning: settings.tuning || 0,
+        ...options,
         onFrame({ level, pitch }) {
           fill.style.width = `${levelToPercent(level)}%`;
           fill.classList.toggle('on', level >= threshold);
@@ -137,7 +137,7 @@ function micInput(container, { accs, chordAccs, qualities, settings, onAnswer })
       heard.textContent = `C’était ${q ? chordName({ root: n, quality: q }) : noteName(n)}`;
     },
     // Élément à jouer. Note : MIDI exact, ou n'importe quelle octave selon le réglage.
-    // Accord : ses notes, et la bonne note à la basse si l'octave doit être exacte.
+    // Accord : ses notes, et la bonne note à la basse si le renversement est exigé.
     expect(it) {
       item = it;
       if (!isChord()) {

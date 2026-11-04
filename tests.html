@@ -155,6 +155,10 @@ eq('Sensibilité auto : 1,5 fois le bruit', MIC.thresholdFromNoise(Array(60).fil
 eq('Sensibilité auto : jamais au-dessus de « Faible »', MIC.thresholdFromNoise(Array(60).fill(0.5)), MIC.SENSITIVITY.low);
 eq('Sensibilité auto : seuil choisi', MIC.thresholdFor({ micSensitivity: 'auto', micThreshold: 0.0015 }), 0.0015);
 eq('Sensibilité auto non mesurée → Moyenne', MIC.thresholdFor({ micSensitivity: 'auto' }), MIC.SENSITIVITY.medium);
+const lo = (st) => { const { threshold, ...o } = MIC.listenOptions(st); return o; };
+eq('Réglages fins par défaut : justesse souple, délai normal', lo({}), { tuning: 0, tolerance: 50, stableMs: 180, chordFrames: 6 });
+eq('Réglages fins : justesse stricte, délai long, accordage', lo({ micPrecision: 'strict', micPatience: 'long', tuning: 12 }), { tuning: 12, tolerance: 20, stableMs: 450, chordFrames: 11 });
+eq('Réglages fins : délai court', lo({ micPatience: 'short' }), { tuning: 0, tolerance: 50, stableMs: 120, chordFrames: 4 });
 
 // Accords au micro : sons de piano synthétiques superposés, mêmes filtres que le micro.
 const everyChord = [];

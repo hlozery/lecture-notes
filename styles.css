@@ -223,6 +223,7 @@ h3 { font-size: 15px; margin: 8px 0 0; color: var(--muted); text-transform: uppe
 
 /* Test du micro */
 .tuner-card { background: var(--card); border-radius: var(--radius); padding: 20px 16px 12px; text-align: center; }
+.tuner-chord { margin: 4px 0 0; font-weight: 700; min-height: 1.4em; }
 .tuner-note { font-size: 56px; font-weight: 800; line-height: 1.1; }
 .tuner-scale {
   position: relative; display: flex; justify-content: space-between; margin: 14px 4px 0;

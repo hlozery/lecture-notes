@@ -4,11 +4,12 @@ import { fromDiatonic, fromMidi, noteName, noteKey, parseKey, shortName } from '
 import { nearestNote } from './pitch.js';
 import { thresholdFor, thresholdFromNoise, openMicrophone, createListener, micErrorMessage } from './mic.js';
 import { levelToPercent, levelToDb, meterHtml } from './input.js';
-import { QUALITIES, QUALITY_ORDER, INVERSION_NAMES, makeChordItem, parseChordKey, isChordKey, chordShort } from './chords.js';
+import { QUALITIES, QUALITY_ORDER, INVERSION_NAMES, makeChordItem, parseChordKey, isChordKey, chordShort, chordName } from './chords.js';
 import { renderStaff } from './staff.js';
 import { startGame } from './game.js';
 import { accuracy, hardest, recentErrorRate } from './stats.js';
-import { load, save, reset } from './storage.js';
+import { load, save, reset, MIC_DEFAULTS } from './storage.js';
+import { bestChord, heardPcs } from './chord-detect.js';
 
 const $ = (sel) => document.querySelector(sel);
 let data = load();
@@ -306,9 +307,22 @@ const INPUT_HELP = {
     + 'Accords : joue toutes les notes ensemble ; avec « Octave : Exacte », il faut aussi le bon renversement (la bonne note à la basse).',
 };
 
+const PRECISION_HELP = {
+  loose: 'Souple : une note un peu fausse est quand même reconnue (piano désaccordé).',
+  normal: 'Normale : une note trop fausse est ignorée.',
+  strict: 'Stricte : seule une note bien juste est reconnue. Accorde d’abord le micro sur ton piano (« jouer un La »).',
+};
+const PATIENCE_HELP = {
+  short: 'Court : une fausse note compte tout de suite.',
+  normal: 'Normal : une fausse note doit tenir un court instant avant de compter.',
+  long: 'Long : laisse le temps à la note précédente de s’éteindre. Utile avec la pédale.',
+};
+
 function renderSettings() {
   const s = data.settings;
   const refresh = () => {
+    $('#set-mic-precision-help').textContent = PRECISION_HELP[s.micPrecision] || PRECISION_HELP.loose;
+    $('#set-mic-patience-help').textContent = PATIENCE_HELP[s.micPatience] || PATIENCE_HELP.normal;
     $('#set-input-help').textContent = INPUT_HELP[s.input];
     $('#set-mic').hidden = s.input !== 'mic';
     $('#set-mic-help').textContent = s.micSensitivity === 'auto' && !s.micThreshold
@@ -324,6 +338,9 @@ function renderSettings() {
   bind('#set-mic-octave', 'micOctave');
   bind('#set-mic-sensitivity', 'micSensitivity');
   bind('#set-mic-boost', 'micBoost');
+  bind('#set-mic-inversion', 'micInversion');
+  bind('#set-mic-precision', 'micPrecision');
+  bind('#set-mic-patience', 'micPatience');
   refresh();
 }
 
@@ -342,6 +359,7 @@ async function openTuner() {
   const fill = $('#t-meter .meter-fill');
   const status = $('#t-status');
   $('#t-note').textContent = '—';
+  $('#t-chord').textContent = '\u00a0';
   status.className = 'center small';
   status.textContent = 'Ouverture du micro…';
   const actions = ['#btn-calibrate', '#btn-measure-noise'].map((sel) => $(sel));
@@ -364,6 +382,17 @@ async function openTuner() {
   session.listener = createListener(session.mic.ctx, session.mic.source, {
     threshold: session.threshold,
     tuning: data.settings.tuning,
+    withChords: true,
+    // Notes et accord entendus, pour vérifier la reconnaissance des accords.
+    onChordFrame(analysis) {
+      if (!analysis) return; // silence : on garde le dernier accord affiché
+      const pcs = heardPcs(analysis);
+      const chord = pcs.length >= 3 && bestChord(analysis);
+      const names = pcs.map((pc) => shortName(fromMidi(60 + pc, true))).join(' · ');
+      $('#t-chord').textContent = pcs.length < 3 ? '\u00a0'
+        : `Accord : ${chord ? chordName({ root: fromMidi(60 + chord.pc, true), quality: chord.quality }) : '?'} (${names})`;
+      if (pcs.length >= 3) $('#t-note').textContent = '—'; // plusieurs notes : pas de note seule
+    },
     onFrame({ level, pitch }) {
       fill.style.width = `${levelToPercent(level)}%`;
       fill.classList.toggle('on', level >= session.threshold);
@@ -446,6 +475,14 @@ $('#btn-measure-noise').addEventListener('click', () => {
   if (!tuner?.listener) return;
   tuner.measuring = [];
   $('#t-status').textContent = 'Silence pendant 2 secondes… (ne joue pas)';
+});
+
+$('#btn-mic-defaults').addEventListener('click', () => {
+  if (!confirm('Remettre les réglages du micro par défaut ? (sensibilité, accordage, justesse…)')) return;
+  Object.assign(data.settings, MIC_DEFAULTS);
+  delete data.settings.micThreshold;
+  save(data);
+  renderSettings();
 });
 
 $('#btn-reset').addEventListener('click', () => {

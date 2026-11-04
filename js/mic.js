@@ -12,6 +12,25 @@ export const FILTERS = [['highpass', 60], ['highpass', 60], ['lowpass', 2000], [
 // Netteté minimale d'une hauteur détectée (1 = son parfaitement périodique).
 export const MIN_CLARITY = 0.8;
 
+// Justesse exigée pour une note seule : écart maximal (cents) avec la note la plus proche.
+export const PRECISION = { loose: 50, normal: 35, strict: 20 };
+// Délai avant de compter une fausse note : durée de tenue (ms) d'une autre note,
+// et nombre d'analyses de suite (~90 ms chacune) pour un autre accord. « Long » aide avec la pédale.
+export const PATIENCE = {
+  short: { stableMs: 120, chordFrames: 4 },
+  normal: { stableMs: 180, chordFrames: 6 },
+  long: { stableMs: 450, chordFrames: 11 },
+};
+// Options d'écoute tirées des réglages.
+export function listenOptions(settings) {
+  return {
+    threshold: thresholdFor(settings),
+    tuning: settings.tuning || 0,
+    tolerance: PRECISION[settings.micPrecision] || PRECISION.loose,
+    ...(PATIENCE[settings.micPatience] || PATIENCE.normal),
+  };
+}
+
 // Seuil effectif : mesuré dans la pièce (« auto ») ou choisi parmi les niveaux.
 export function thresholdFor(settings) {
   if (settings.micSensitivity === 'auto' && settings.micThreshold) return settings.micThreshold;
@@ -71,15 +90,17 @@ export function micErrorMessage(err) {
  * Mode accord (setChord(judge)) : toutes les ~90 ms, le spectre est comparé à l'accord attendu.
  *  judge(analyse) → { ok: true } | { ok: false, heard } | null (voir chord-detect.js) ;
  *  onChordFrame(analyse) pour l'affichage, onChord(verdict) une fois par attaque, quand le
- *  verdict est stable : 2 analyses de suite pour le bon accord, 6 pour un autre accord
- *  (~0,5 s : le temps que l'accord précédent, s'il résonne encore, ne fausse plus l'écoute).
+ *  verdict est stable : 2 analyses de suite pour le bon accord, chordFrames pour un autre accord
+ *  (~0,5 s par défaut : le temps que l'accord précédent, s'il résonne encore, ne fausse plus l'écoute).
+ * tolerance : écart maximal en cents pour reconnaître une note seule (au-delà : rien).
+ * withChords : en mode notes, analyse aussi le spectre et le passe à onChordFrame (écran de test).
  *  setChord(null) revient aux notes seules.
  * setTuning(cents) et setThreshold(rms) changent les réglages sans couper le micro.
  */
 export const CHORD_FFT = 16384; // ~0,34 s de son : de quoi séparer deux notes graves voisines
 export function createListener(ctx, source, {
-  threshold, tuning = 0, fastMs = 60, stableMs = 180, isExpected = () => false, onFrame, onNote,
-  onChordFrame, onChord,
+  threshold, tuning = 0, fastMs = 60, stableMs = 180, chordFrames = 6, tolerance = 50,
+  isExpected = () => false, onFrame, onNote, onChordFrame, onChord, withChords = false,
 }) {
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 2048;
@@ -120,9 +141,13 @@ export function createListener(ctx, source, {
     let pitch = null;
     if (level >= threshold) {
       const r = yin(buf, ctx.sampleRate);
-      if (r && r.clarity >= MIN_CLARITY) pitch = { ...nearestNote(r.freq, tuning), freq: r.freq };
+      if (r && r.clarity >= MIN_CLARITY) {
+        const n = nearestNote(r.freq, tuning);
+        if (Math.abs(n.cents) <= tolerance) pitch = { ...n, freq: r.freq };
+      }
     }
     onFrame?.({ level, pitch });
+    if (withChords) chordDisplay(now, level);
 
     if (!pitch) {
       candidate = null;
@@ -137,6 +162,15 @@ export function createListener(ctx, source, {
       floor = level;
       onNote?.(pitch);
     }
+  }
+
+  // Écran de test : notes et accord entendus, sans rien valider.
+  function chordDisplay(now, level) {
+    if (level < threshold) return onChordFrame?.(null);
+    if (now - lastChord < 90) return;
+    lastChord = now;
+    big.getFloatTimeDomainData(bigBuf);
+    onChordFrame?.(analyzeChord(bigBuf, ctx.sampleRate, tuning));
   }
 
   function chordFrame(now, level) {
@@ -155,7 +189,7 @@ export function createListener(ctx, source, {
     const verdict = judge(analysis);
     const key = verdict && (verdict.ok ? 'ok' : `${verdict.heard.pc}:${verdict.heard.quality}:${verdict.heard.bass}`);
     run = key === run.key ? { key, n: run.n + 1 } : { key, n: 1 };
-    if (key && !hold && !chordDone && run.n >= (verdict.ok ? 2 : 6)) {
+    if (key && !hold && !chordDone && run.n >= (verdict.ok ? 2 : chordFrames)) {
       chordDone = true;
       floor = level;
       onChord?.(verdict);
