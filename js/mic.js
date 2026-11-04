@@ -1,8 +1,8 @@
 // Écoute du piano au micro : niveau sonore, hauteur détectée, notes stables.
 import { yin, rms, nearestNote } from './pitch.js';
 
-// Seuils de volume (RMS, mesuré après filtrage) selon la sensibilité choisie (−34 dB à −62 dB).
-export const SENSITIVITY = { low: 0.02, medium: 0.006, high: 0.002, max: 0.0008 };
+// Seuils de volume (RMS, mesuré après filtrage) selon la sensibilité choisie (−34 dB à −70 dB).
+export const SENSITIVITY = { low: 0.02, medium: 0.004, high: 0.001, max: 0.0003 };
 
 // Filtres appliqués avant l'analyse : les notes du jeu (Do2–Do6) vivent entre 65 et ~1 000 Hz ;
 // on retire le grondement grave et le souffle aigu, qui brouillent la détection (mesuré dans tests.html).
@@ -20,13 +20,15 @@ export function thresholdFor(settings) {
 /**
  * Ouvre le micro. À appeler pendant un geste de l'utilisateur (toucher) : iOS n'autorise
  * le démarrage du son que dans ce cas, d'où la création du contexte audio avant l'attente.
+ * boost : laisser l'iPhone amplifier le micro (traitement « voix », comme pendant un appel).
+ * Sans lui, le son est brut mais souvent très faible sur iPhone.
  */
-export async function openMicrophone() {
+export async function openMicrophone({ boost = true } = {}) {
   const ctx = new (window.AudioContext || window.webkitAudioContext)();
   ctx.resume();
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      audio: { echoCancellation: boost, noiseSuppression: false, autoGainControl: boost },
     });
     await ctx.resume();
     return {
@@ -48,7 +50,7 @@ export async function openMicrophone() {
 export function thresholdFromNoise(levels) {
   const sorted = [...levels].sort((x, y) => x - y);
   const p90 = sorted[Math.floor(sorted.length * 0.9)] || 0;
-  return Math.min(SENSITIVITY.low, Math.max(0.0004, p90 * 1.5));
+  return Math.min(SENSITIVITY.low, Math.max(0.0002, p90 * 1.5));
 }
 
 export function micErrorMessage(err) {

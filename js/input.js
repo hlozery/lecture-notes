@@ -20,9 +20,13 @@ export function createInput(container, { mode, accs, qualities, settings, onAnsw
   return buttons(container, accs, mode === 'chord' ? qualities : null, onAnswer);
 }
 
-// Volume (RMS) → position sur la jauge, en décibels de −70 à 0.
+// Volume (RMS) → décibels, et position sur la jauge (de −80 à 0 dB).
+export function levelToDb(level) {
+  return 20 * Math.log10(level || 1e-8);
+}
+
 export function levelToPercent(level) {
-  return Math.max(0, Math.min(100, ((20 * Math.log10(level || 1e-7) + 70) / 70) * 100));
+  return Math.max(0, Math.min(100, ((levelToDb(level) + 80) / 80) * 100));
 }
 
 export function meterHtml() {
@@ -40,7 +44,7 @@ function micInput(container, accs, settings, onAnswer) {
 
   let mic = null, listener = null, closed = false, fallback = null;
   let expected = () => false; // la note affichée, pour la valider plus vite
-  openMicrophone()
+  openMicrophone({ boost: settings.micBoost !== 'off' })
     .then((m) => {
       if (closed) return m.close();
       mic = m;

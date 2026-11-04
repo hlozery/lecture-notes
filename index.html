@@ -176,6 +176,11 @@
         <button data-value="max">Max</button><button data-value="auto">Auto</button>
       </div>
       <p class="muted small" id="set-mic-help"></p>
+      <label>Amplification de l’iPhone</label>
+      <div class="seg" id="set-mic-boost">
+        <button data-value="on">Oui</button><button data-value="off">Non (son brut)</button>
+      </div>
+      <p class="muted small">Oui : l’iPhone monte le volume du micro, comme pendant un appel. Si les notes sont mal reconnues, essaie Non.</p>
       <button class="btn" id="btn-tuner">Tester et accorder le micro</button>
     </div>
   </div>
@@ -192,6 +197,7 @@
     <p class="muted center small" id="t-cents">&nbsp;</p>
   </div>
   <div id="t-meter"></div>
+  <p class="muted center small" id="t-level">&nbsp;</p>
   <p class="center small" id="t-status"></p>
   <div class="menu">
     <button class="btn primary" id="btn-measure-noise">Régler la sensibilité automatiquement</button>

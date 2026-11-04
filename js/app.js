@@ -3,7 +3,7 @@ import { LEVELS, CHORD_LEVELS, RANGES, buildPool, freeLevel, starsFor, isUnlocke
 import { fromDiatonic, fromMidi, noteName, noteKey, parseKey, shortName } from './music.js';
 import { nearestNote } from './pitch.js';
 import { thresholdFor, thresholdFromNoise, openMicrophone, createListener, micErrorMessage } from './mic.js';
-import { levelToPercent, meterHtml } from './input.js';
+import { levelToPercent, levelToDb, meterHtml } from './input.js';
 import { QUALITIES, QUALITY_ORDER, INVERSION_NAMES, makeChordItem, parseChordKey, isChordKey, chordShort } from './chords.js';
 import { renderStaff } from './staff.js';
 import { startGame } from './game.js';
@@ -323,6 +323,7 @@ function renderSettings() {
   bind('#set-input', 'input');
   bind('#set-mic-octave', 'micOctave');
   bind('#set-mic-sensitivity', 'micSensitivity');
+  bind('#set-mic-boost', 'micBoost');
   refresh();
 }
 
@@ -350,7 +351,7 @@ async function openTuner() {
   showThreshold(session.threshold);
   tuner = session;
   try {
-    session.mic = await openMicrophone();
+    session.mic = await openMicrophone({ boost: data.settings.micBoost !== 'off' });
   } catch (err) {
     status.textContent = micErrorMessage(err);
     status.className = 'center small mic-error';
@@ -366,6 +367,11 @@ async function openTuner() {
     onFrame({ level, pitch }) {
       fill.style.width = `${levelToPercent(level)}%`;
       fill.classList.toggle('on', level >= session.threshold);
+      // Niveau en chiffres (le pic récent, plus lisible qu'une valeur qui saute), pour comparer les réglages.
+      session.peak = Math.max(level, (session.peak || 0) * 0.97);
+      const db = Math.round(levelToDb(session.peak));
+      const fmt = (n) => String(n).replace('-', '−');
+      $('#t-level').textContent = `Niveau : ${db < -80 ? 'moins de −80' : fmt(db)} dB · seuil : ${fmt(Math.round(levelToDb(session.threshold)))} dB`;
       // Sensibilité auto : environ 2 secondes de niveaux mesurés en silence.
       if (session.measuring) {
         session.measuring.push(level);
