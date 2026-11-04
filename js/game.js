@@ -110,6 +110,7 @@ export function startGame({ level, pool, data, els, onAnswered, onEnd }) {
     els.feedback.textContent = '';
     els.feedback.className = 'feedback';
     st.input = inputs.show(st.current.kind === 'chord' ? 'chord' : 'note');
+    if (st.current.kind !== 'chord') st.input.expect?.(st.current.note);
     st.failed = false;
     st.locked = false;
     st.t0 = performance.now();

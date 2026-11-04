@@ -173,7 +173,9 @@
       <label>Sensibilité du micro</label>
       <div class="seg" id="set-mic-sensitivity">
         <button data-value="low">Faible</button><button data-value="medium">Moyenne</button><button data-value="high">Forte</button>
+        <button data-value="max">Max</button><button data-value="auto">Auto</button>
       </div>
+      <p class="muted small" id="set-mic-help"></p>
       <button class="btn" id="btn-tuner">Tester et accorder le micro</button>
     </div>
   </div>
@@ -192,7 +194,8 @@
   <div id="t-meter"></div>
   <p class="center small" id="t-status"></p>
   <div class="menu">
-    <button class="btn primary" id="btn-calibrate">Accorder sur mon piano : jouer un La</button>
+    <button class="btn primary" id="btn-measure-noise">Régler la sensibilité automatiquement</button>
+    <button class="btn" id="btn-calibrate">Accorder sur mon piano : jouer un La</button>
     <button class="btn ghost" id="btn-tuning-reset">Revenir au La 440 Hz</button>
   </div>
 </section>

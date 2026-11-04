@@ -1,7 +1,7 @@
 // Zone de réponse : boutons Do Ré Mi… (+ barre ♭ ♮ ♯, + qualité d'accord) ou mini clavier de piano.
-import { LETTERS, ACC_SYMBOL, pitchClass, fromMidi, noteName } from './music.js';
+import { LETTERS, ACC_SYMBOL, pitchClass, fromMidi, noteName, midi } from './music.js';
 import { QUALITIES } from './chords.js';
-import { SENSITIVITY, openMicrophone, createListener, micErrorMessage } from './mic.js';
+import { thresholdFor, openMicrophone, createListener, micErrorMessage } from './mic.js';
 
 const WHITE_PCS = [0, 2, 4, 5, 7, 9, 11];
 // Touche noire → position (en largeurs de touche blanche) de sa frontière gauche.
@@ -20,9 +20,9 @@ export function createInput(container, { mode, accs, qualities, settings, onAnsw
   return buttons(container, accs, mode === 'chord' ? qualities : null, onAnswer);
 }
 
-// Volume (RMS) → position sur la jauge, en décibels de −60 à 0.
+// Volume (RMS) → position sur la jauge, en décibels de −70 à 0.
 export function levelToPercent(level) {
-  return Math.max(0, Math.min(100, ((20 * Math.log10(level || 1e-6) + 60) / 60) * 100));
+  return Math.max(0, Math.min(100, ((20 * Math.log10(level || 1e-7) + 70) / 70) * 100));
 }
 
 export function meterHtml() {
@@ -31,7 +31,7 @@ export function meterHtml() {
 
 // Jauge + note entendue en direct ; les notes jouées sont envoyées à onAnswer({ midi, retry: true }).
 function micInput(container, accs, settings, onAnswer) {
-  const threshold = SENSITIVITY[settings.micSensitivity] || SENSITIVITY.medium;
+  const threshold = thresholdFor(settings);
   container.innerHTML = `${meterHtml()}<p class="mic-heard">Ouverture du micro…</p>`;
   const fill = container.querySelector('.meter-fill');
   const heard = container.querySelector('.mic-heard');
@@ -39,6 +39,7 @@ function micInput(container, accs, settings, onAnswer) {
   const idle = () => { heard.textContent = 'Joue la note au piano 🎹'; };
 
   let mic = null, listener = null, closed = false, fallback = null;
+  let expected = () => false; // la note affichée, pour la valider plus vite
   openMicrophone()
     .then((m) => {
       if (closed) return m.close();
@@ -52,6 +53,7 @@ function micInput(container, accs, settings, onAnswer) {
           fill.classList.toggle('on', level >= threshold);
           if (pitch) heard.textContent = `On entend : ${noteName(fromMidi(pitch.midi))}`;
         },
+        isExpected: (m) => expected(m),
         onNote: (pitch) => onAnswer({ midi: pitch.midi, retry: true }),
       });
     })
@@ -71,6 +73,11 @@ function micInput(container, accs, settings, onAnswer) {
     showAnswer(n) {
       if (fallback) return fallback.showAnswer(n);
       heard.textContent = `C’était ${noteName(n)}`;
+    },
+    // Note à jouer : MIDI exact, ou n'importe quelle octave selon le réglage.
+    expect(n) {
+      const target = midi(n);
+      expected = settings.micOctave === 'any' ? (m) => (m - target) % 12 === 0 : (m) => m === target;
     },
     // Peut être appelé plusieurs fois (fin de partie, puis nouvelle partie).
     destroy() {

@@ -2,7 +2,7 @@
 import { LEVELS, CHORD_LEVELS, RANGES, buildPool, freeLevel, starsFor, isUnlocked } from './levels.js';
 import { fromDiatonic, fromMidi, noteName, noteKey, parseKey, shortName } from './music.js';
 import { nearestNote } from './pitch.js';
-import { SENSITIVITY, openMicrophone, createListener, micErrorMessage } from './mic.js';
+import { thresholdFor, thresholdFromNoise, openMicrophone, createListener, micErrorMessage } from './mic.js';
 import { levelToPercent, meterHtml } from './input.js';
 import { QUALITIES, QUALITY_ORDER, INVERSION_NAMES, makeChordItem, parseChordKey, isChordKey, chordShort } from './chords.js';
 import { renderStaff } from './staff.js';
@@ -311,6 +311,9 @@ function renderSettings() {
   const refresh = () => {
     $('#set-input-help').textContent = INPUT_HELP[s.input];
     $('#set-mic').hidden = s.input !== 'mic';
+    $('#set-mic-help').textContent = s.micSensitivity === 'auto' && !s.micThreshold
+      ? 'Auto : règle-la d’abord dans « Tester le micro » (2 secondes de silence). En attendant : Moyenne.'
+      : 'Si la jauge ne dépasse pas le trait quand tu joues doucement, augmente la sensibilité, ou choisis Auto.';
   };
   const bind = (sel, field) => bindSeg($(sel), s[field], (v) => {
     s[field] = v;
@@ -334,17 +337,17 @@ function tuningText(c) {
 
 async function openTuner() {
   show('tuner');
-  const threshold = SENSITIVITY[data.settings.micSensitivity] || SENSITIVITY.medium;
   $('#t-meter').innerHTML = meterHtml();
-  $('#t-meter .meter-mark').style.left = `${levelToPercent(threshold)}%`;
   const fill = $('#t-meter .meter-fill');
   const status = $('#t-status');
   $('#t-note').textContent = '—';
   status.className = 'center small';
   status.textContent = 'Ouverture du micro…';
-  $('#btn-calibrate').disabled = true;
+  const actions = ['#btn-calibrate', '#btn-measure-noise'].map((sel) => $(sel));
+  actions.forEach((b) => { b.disabled = true; });
 
-  const session = { calibrating: null };
+  const session = { calibrating: null, measuring: null, threshold: thresholdFor(data.settings) };
+  showThreshold(session.threshold);
   tuner = session;
   try {
     session.mic = await openMicrophone();
@@ -355,14 +358,19 @@ async function openTuner() {
   }
   if (tuner !== session) return session.mic.close();
   status.textContent = tuningText(data.settings.tuning);
-  $('#btn-calibrate').disabled = false;
+  actions.forEach((b) => { b.disabled = false; });
 
   session.listener = createListener(session.mic.ctx, session.mic.source, {
-    threshold,
+    threshold: session.threshold,
     tuning: data.settings.tuning,
     onFrame({ level, pitch }) {
       fill.style.width = `${levelToPercent(level)}%`;
-      fill.classList.toggle('on', level >= threshold);
+      fill.classList.toggle('on', level >= session.threshold);
+      // Sensibilité auto : environ 2 secondes de niveaux mesurés en silence.
+      if (session.measuring) {
+        session.measuring.push(level);
+        if (session.measuring.length >= 60) finishNoiseMeasure(session);
+      }
       if (!pitch) return;
       $('#t-note').textContent = noteName(fromMidi(pitch.midi));
       $('#t-needle').style.left = `${50 + pitch.cents}%`;
@@ -382,6 +390,22 @@ function finishCalibration(samples) {
   const sorted = [...samples].sort((a, b) => a - b);
   const median = sorted[Math.floor(sorted.length / 2)];
   setTuning(Math.max(-50, Math.min(50, median)));
+}
+
+function showThreshold(threshold) {
+  $('#t-meter .meter-mark').style.left = `${levelToPercent(threshold)}%`;
+}
+
+function finishNoiseMeasure(session) {
+  const threshold = thresholdFromNoise(session.measuring);
+  session.measuring = null;
+  session.threshold = threshold;
+  session.listener.setThreshold(threshold);
+  showThreshold(threshold);
+  data.settings.micSensitivity = 'auto';
+  data.settings.micThreshold = threshold;
+  save(data);
+  $('#t-status').textContent = 'Sensibilité réglée sur le bruit de la pièce ✓ Joue doucement pour vérifier que la jauge passe le trait.';
 }
 
 function setTuning(cents) {
@@ -412,6 +436,11 @@ $('#btn-calibrate').addEventListener('click', () => {
   $('#t-status').textContent = 'Joue un La et laisse-le sonner…';
 });
 $('#btn-tuning-reset').addEventListener('click', () => setTuning(0));
+$('#btn-measure-noise').addEventListener('click', () => {
+  if (!tuner?.listener) return;
+  tuner.measuring = [];
+  $('#t-status').textContent = 'Silence pendant 2 secondes… (ne joue pas)';
+});
 
 $('#btn-reset').addEventListener('click', () => {
   if (!confirm('Effacer toute la progression et les statistiques ?')) return;

@@ -11,6 +11,7 @@ import * as L from './js/levels.js';
 import * as S from './js/stats.js';
 import * as C from './js/chords.js';
 import * as P from './js/pitch.js';
+import * as MIC from './js/mic.js';
 
 const results = [];
 const eq = (label, got, want) => results.push([label, JSON.stringify(got) === JSON.stringify(want), got, want]);
@@ -118,6 +119,41 @@ eq('Micro : silence → rien', P.yin(new Float32Array(2048), 48000), null);
 let seed = 42;
 const whiteNoise = Float32Array.from({ length: 2048 }, () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1);
 eq('Micro : bruit pur → rien', P.yin(whiteNoise, 48000), null);
+// Son faible dans le bruit, après les mêmes filtres que le micro (FILTERS de mic.js, biquads Butterworth).
+function filterLikeMic(x, sr = 48000) {
+  for (const [type, fc] of MIC.FILTERS) {
+    const w = 2 * Math.PI * fc / sr, al = Math.sin(w) / (2 * Math.SQRT1_2), c = Math.cos(w), a0 = 1 + al;
+    const [b0, b1, b2] = type === 'lowpass' ? [(1 - c) / 2, 1 - c, (1 - c) / 2] : [(1 + c) / 2, -(1 + c), (1 + c) / 2];
+    const y = new Float32Array(x.length);
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (let i = 0; i < x.length; i++) {
+      const v = (b0 * x[i] + b1 * x1 + b2 * x2 + 2 * c * y1 - (1 - al) * y2) / a0;
+      x2 = x1; x1 = x[i]; y2 = y1; y1 = v; y[i] = v;
+    }
+    x = y;
+  }
+  return x.slice(1024); // on écarte le démarrage des filtres
+}
+let nseed = 7;
+const nrand = () => ((nseed = (nseed * 16807) % 2147483647) / 2147483647) * 2 - 1;
+const whiteN = (n) => Float32Array.from({ length: n }, nrand);
+const brownN = (n) => { let v = 0; return Float32Array.from({ length: n }, () => (v = 0.98 * v + 0.2 * nrand())); };
+const hits = (noiseGen, snr) => range.filter((m) => {
+  const t = pianoTone(m, { n: 3072 });
+  const nz = noiseGen(3072), k = snr ? P.rms(t) / snr / P.rms(nz) : 0;
+  const r = P.yin(filterLikeMic(t.map((x, i) => x + nz[i] * k)), 48000);
+  return r && r.clarity >= MIC.MIN_CLARITY && P.nearestNote(r.freq).midi === m;
+}).length;
+eq('Micro filtré : bruit blanc aussi fort que le piano', hits(whiteN, 1), 49);
+eq('Micro filtré : grondement grave 4 fois moins fort', hits(brownN, 4), 49);
+eq('Micro filtré : grondement grave 3 fois moins fort (≥ 45/49)', hits(brownN, 3) >= 45, true);
+eq('Micro filtré : sans bruit, Do2 à Do6', hits(whiteN, 0), 49);
+eq('Micro filtré : bruit seul jamais pris pour une note (100 essais)', Array.from({ length: 100 }, (_, k) => {
+  const r = P.yin(filterLikeMic(k % 2 ? whiteN(3072) : brownN(3072)), 48000); return r && r.clarity >= MIC.MIN_CLARITY; }).filter(Boolean).length, 0);
+eq('Sensibilité auto : 1,5 fois le bruit', MIC.thresholdFromNoise(Array(60).fill(0.002)), 0.003);
+eq('Sensibilité auto : jamais au-dessus de « Faible »', MIC.thresholdFromNoise(Array(60).fill(0.5)), MIC.SENSITIVITY.low);
+eq('Sensibilité auto : seuil choisi', MIC.thresholdFor({ micSensitivity: 'auto', micThreshold: 0.0015 }), 0.0015);
+eq('Sensibilité auto non mesurée → Moyenne', MIC.thresholdFor({ micSensitivity: 'auto' }), MIC.SENSITIVITY.medium);
 
 const out = document.getElementById('out');
 for (const [label, ok, got, want] of results) {

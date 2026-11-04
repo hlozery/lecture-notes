@@ -1,5 +1,5 @@
 // Réseau d'abord (toujours la dernière version en ligne), cache en secours hors-ligne.
-const CACHE = 'lecture-notes-v3';
+const CACHE = 'lecture-notes-v4';
 const FILES = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/chords.js', 'js/game.js', 'js/input.js', 'js/levels.js', 'js/mic.js', 'js/music.js', 'js/pitch.js',
