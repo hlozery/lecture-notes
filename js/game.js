@@ -2,7 +2,7 @@
 import { pitchClass, noteName, midi, fromMidi } from './music.js';
 import { QUALITY_ORDER, INVERSION_NAMES, chordName } from './chords.js';
 import { renderStaff } from './staff.js';
-import { createInput } from './input.js';
+import { createInput, heardChordName } from './input.js';
 import { recordAnswer, pickWeighted } from './stats.js';
 import { NOTES_PER_GAME } from './levels.js';
 
@@ -13,6 +13,7 @@ export function itemName(item) {
 
 function isCorrect(item, a, settings) {
   if (!a) return false;
+  if ('chord' in a) return a.chord.ok;
   if (item.kind === 'chord') {
     return a.letter === item.root.letter && a.acc === item.root.acc && a.quality === item.quality;
   }
@@ -22,8 +23,9 @@ function isCorrect(item, a, settings) {
   return 'pc' in a ? a.pc === pitchClass(item.note) : a.letter === item.note.letter && a.acc === item.note.acc;
 }
 
-// Ce que le micro a entendu, dit simplement (« Fa dièse », « Sol, mais une octave trop bas »).
+// Ce que le micro a entendu, dit simplement (« Fa dièse », « Sol, mais une octave trop bas », « Ré mineur »).
 function heardText(a, item) {
+  if ('chord' in a) return heardChordName(a.chord.heard, item);
   const n = fromMidi(a.midi, item.note.acc === -1);
   if (a.midi % 12 !== pitchClass(item.note)) return noteName(n);
   const diff = Math.round((a.midi - midi(item.note)) / 12);
@@ -43,16 +45,22 @@ function createInputs(container, pool, settings, onAnswer) {
     container.append(box);
     inputs[kind] = { box, ...createInput(box, { onAnswer, ...opts }) };
   };
-  if (notes.length) add('note', { mode: settings.input, settings, accs: uniq(notes.map((p) => p.note.acc)) });
-  if (chords.length) {
+  const qualities = QUALITY_ORDER.filter((q) => chords.some((p) => p.quality === q));
+  const chordAccs = uniq(chords.map((p) => p.root.acc));
+  if (settings.input === 'mic') {
+    // Au piano : un seul micro pour les notes et les accords.
+    add('mic', { mode: 'mic', settings, accs: uniq(notes.map((p) => p.note.acc)), chordAccs, qualities });
+  } else if (notes.length) add('note', { mode: settings.input, settings, accs: uniq(notes.map((p) => p.note.acc)) });
+  if (chords.length && settings.input !== 'mic') {
     add('chord', {
       mode: 'chord',
-      accs: uniq(chords.map((p) => p.root.acc)),
-      qualities: QUALITY_ORDER.filter((q) => chords.some((p) => p.quality === q)),
+      accs: chordAccs,
+      qualities,
     });
   }
   return {
     show(kind) {
+      if (inputs.mic) kind = 'mic';
       for (const [k, input] of Object.entries(inputs)) input.box.hidden = k !== kind;
       inputs[kind].reset();
       return inputs[kind];
@@ -110,7 +118,7 @@ export function startGame({ level, pool, data, els, onAnswered, onEnd }) {
     els.feedback.textContent = '';
     els.feedback.className = 'feedback';
     st.input = inputs.show(st.current.kind === 'chord' ? 'chord' : 'note');
-    if (st.current.kind !== 'chord') st.input.expect?.(st.current.note);
+    st.input.expect?.(st.current);
     st.failed = false;
     st.locked = false;
     st.t0 = performance.now();
@@ -148,7 +156,8 @@ export function startGame({ level, pool, data, els, onAnswered, onEnd }) {
       els.feedback.textContent = ok ? `${itemName(item)} ✓ (corrigé)` : `Temps écoulé — c’était ${itemName(item)}`;
       els.feedback.className = ok ? 'feedback ok' : 'feedback bad';
       draw(ok ? 'ok' : 'bad');
-      if (!ok) st.input.showAnswer(item.note);
+      if (!ok && item.kind === 'chord') st.input.showAnswer(item.root, item.quality);
+      else if (!ok) st.input.showAnswer(item.note);
       st.timeout = setTimeout(next, ok ? 600 : 1600);
       return;
     }

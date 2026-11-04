@@ -1,8 +1,9 @@
 // Réseau d'abord (toujours la dernière version en ligne), cache en secours hors-ligne.
-const CACHE = 'lecture-notes-v5';
+const CACHE = 'lecture-notes-v6';
 const FILES = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
-  'js/app.js', 'js/chords.js', 'js/game.js', 'js/input.js', 'js/levels.js', 'js/mic.js', 'js/music.js', 'js/pitch.js',
+  'js/app.js', 'js/chord-detect.js',
+  'js/chords.js', 'js/game.js', 'js/input.js', 'js/levels.js', 'js/mic.js', 'js/music.js', 'js/pitch.js',
   'js/staff.js', 'js/stats.js', 'js/storage.js',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
 ];

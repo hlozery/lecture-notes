@@ -12,6 +12,7 @@ import * as S from './js/stats.js';
 import * as C from './js/chords.js';
 import * as P from './js/pitch.js';
 import * as MIC from './js/mic.js';
+import * as CD from './js/chord-detect.js';
 
 const results = [];
 const eq = (label, got, want) => results.push([label, JSON.stringify(got) === JSON.stringify(want), got, want]);
@@ -154,6 +155,57 @@ eq('Sensibilité auto : 1,5 fois le bruit', MIC.thresholdFromNoise(Array(60).fil
 eq('Sensibilité auto : jamais au-dessus de « Faible »', MIC.thresholdFromNoise(Array(60).fill(0.5)), MIC.SENSITIVITY.low);
 eq('Sensibilité auto : seuil choisi', MIC.thresholdFor({ micSensitivity: 'auto', micThreshold: 0.0015 }), 0.0015);
 eq('Sensibilité auto non mesurée → Moyenne', MIC.thresholdFor({ micSensitivity: 'auto' }), MIC.SENSITIVITY.medium);
+
+// Accords au micro : sons de piano synthétiques superposés, mêmes filtres que le micro.
+const everyChord = [];
+for (const clef of ['sol', 'fa']) {
+  for (let letter = 0; letter < 7; letter++) {
+    for (const acc of [-1, 0, 1]) {
+      for (const quality of C.QUALITY_ORDER) {
+        for (let inv = 0; inv < 4; inv++) {
+          const it = C.makeChordItem(clef, { letter, acc }, quality, inv);
+          if (it) everyChord.push(it);
+        }
+      }
+    }
+  }
+}
+const N = 16384;
+function chordSound(midis, { noise = 0, seed = 3 } = {}) {
+  const buf = new Float32Array(N + 1024);
+  midis.forEach((m, i) => pianoTone(m, { n: N + 1024, seed: seed + i }).forEach((v, j) => { buf[j] += v; }));
+  if (noise) { const k = P.rms(buf) * noise; const nz = whiteN(N + 1024); for (let j = 0; j < buf.length; j++) buf[j] += nz[j] * k; }
+  return filterLikeMic(buf);
+}
+const expectedOf = (it) => ({ rootPc: M.pitchClass(it.root), quality: it.quality, bassPc: M.pitchClass(it.chord[0]) });
+const verdict = (midis, it, opts) => CD.judgeChord(CD.analyzeChord(chordSound(midis, opts), 48000), expectedOf(it), { checkBass: true });
+const chordMidis = (it) => it.chord.map(M.midi);
+const okCount = (opts) => everyChord.filter((it) => verdict(chordMidis(it), it, opts)?.ok).length;
+eq(`Accords au micro : tous reconnus (${everyChord.length})`, okCount(), everyChord.length);
+eq('Accords au micro : avec bruit de fond (≥ 95 %)', okCount({ noise: 0.3 }) >= everyChord.length * 0.95, true);
+const doubled = everyChord.filter((it) =>
+  CD.judgeChord(CD.analyzeChord(chordSound([M.midi(it.chord[0]) - 12, ...chordMidis(it)]), 48000), expectedOf(it))?.ok).length;
+eq(`Accords au micro : basse doublée à l’octave inférieure (${doubled}/${everyChord.length}, ≥ 70 % : voicing non demandé)`, doubled >= everyChord.length * 0.7, true);
+eq('Accords au micro : notes entendues (Do Mi Sol)', CD.heardPcs(CD.analyzeChord(chordSound([60, 64, 67]), 48000)), [0, 4, 7]);
+const sameRoot = (it, q) => C.makeChordItem(it.clef, it.root, q, 0);
+eq('Accords au micro : majeur joué au lieu de mineur → refusé', everyChord.filter((it) => it.quality === 'maj' && !it.inversion)
+  .filter((it) => { const e = sameRoot(it, 'min'); return e && verdict(chordMidis(it), e)?.ok; }).length, 0);
+eq('Accords au micro : mineur joué au lieu de majeur → refusé', everyChord.filter((it) => it.quality === 'min' && !it.inversion)
+  .filter((it) => { const e = sameRoot(it, 'maj'); return e && verdict(chordMidis(it), e)?.ok; }).length, 0);
+eq('Accords au micro : 7 joué au lieu de majeur → refusé', everyChord.filter((it) => it.quality === 'dom7' && !it.inversion)
+  .filter((it) => { const e = sameRoot(it, 'maj'); return e && verdict(chordMidis(it), e)?.ok; }).length, 0);
+eq('Accords au micro : majeur joué au lieu de maj7 → refusé', everyChord.filter((it) => it.quality === 'maj' && !it.inversion)
+  .filter((it) => { const e = sameRoot(it, 'maj7'); return e && verdict(chordMidis(it), e)?.ok; }).length, 0);
+eq('Accords au micro : la fondamentale seule ne suffit pas', everyChord.filter((it) => !it.inversion)
+  .filter((it) => verdict([M.midi(it.chord[0])], it)?.ok).length, 0);
+eq('Accords au micro : deux notes sur trois ne suffisent pas', everyChord.filter((it) => !it.inversion && it.chord.length === 3)
+  .filter((it) => verdict(chordMidis(it).slice(0, 2), it)?.ok).length, 0);
+eq('Accords au micro : mauvais renversement → refusé (renversement exact)', everyChord.filter((it) => it.inversion === 1)
+  .filter((it) => verdict(chordMidis(C.makeChordItem(it.clef, it.root, it.quality, 0)), it)?.ok).length, 0);
+eq('Accords au micro : faux accord nommé (Ré mineur au lieu de Do majeur)',
+  verdict(chordMidis(C.makeChordItem('sol', { letter: RE, acc: 0 }, 'min', 0)), C.makeChordItem('sol', { letter: DO, acc: 0 }, 'maj', 0))?.heard,
+  { pc: 2, quality: 'min', bass: 2, inversionOnly: false });
+eq('Accords au micro : silence → rien', CD.judgeChord(CD.analyzeChord(new Float32Array(N), 48000), { rootPc: 0, quality: 'maj', bassPc: 0 }), null);
 
 const out = document.getElementById('out');
 for (const [label, ok, got, want] of results) {

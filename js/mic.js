@@ -1,5 +1,6 @@
 // Écoute du piano au micro : niveau sonore, hauteur détectée, notes stables.
 import { yin, rms, nearestNote } from './pitch.js';
+import { analyzeChord } from './chord-detect.js';
 
 // Seuils de volume (RMS, mesuré après filtrage) selon la sensibilité choisie (−34 dB à −70 dB).
 export const SENSITIVITY = { low: 0.02, medium: 0.004, high: 0.001, max: 0.0003 };
@@ -67,13 +68,23 @@ export function micErrorMessage(err) {
  *    la même note n'est redonnée qu'après un silence ou une nouvelle frappe.
  *  isExpected(midi) : la note attendue est acceptée vite (fastMs) ; une autre note doit tenir
  *    plus longtemps (stableMs) pour qu'un accroc à l'attaque ne compte pas comme une fausse note.
+ * Mode accord (setChord(judge)) : toutes les ~90 ms, le spectre est comparé à l'accord attendu.
+ *  judge(analyse) → { ok: true } | { ok: false, heard } | null (voir chord-detect.js) ;
+ *  onChordFrame(analyse) pour l'affichage, onChord(verdict) une fois par attaque, quand le
+ *  verdict est stable : 2 analyses de suite pour le bon accord, 6 pour un autre accord
+ *  (~0,5 s : le temps que l'accord précédent, s'il résonne encore, ne fausse plus l'écoute).
+ *  setChord(null) revient aux notes seules.
  * setTuning(cents) et setThreshold(rms) changent les réglages sans couper le micro.
  */
+export const CHORD_FFT = 16384; // ~0,34 s de son : de quoi séparer deux notes graves voisines
 export function createListener(ctx, source, {
   threshold, tuning = 0, fastMs = 60, stableMs = 180, isExpected = () => false, onFrame, onNote,
+  onChordFrame, onChord,
 }) {
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 2048;
+  const big = ctx.createAnalyser();
+  big.fftSize = CHORD_FFT;
   const filters = FILTERS.map(([type, freq]) => {
     const f = ctx.createBiquadFilter();
     f.type = type;
@@ -81,10 +92,14 @@ export function createListener(ctx, source, {
     return f;
   });
   [source, ...filters, analyser].reduce((from, to) => from.connect(to));
+  filters.at(-1).connect(big);
   const buf = new Float32Array(analyser.fftSize);
+  const bigBuf = new Float32Array(big.fftSize);
   let raf = 0, lastTick = 0;
   let candidate = null, since = 0;
   let emitted = null, floor = Infinity;
+  let judge = null, lastChord = 0, run = { key: null, n: 0 }, chordDone = false;
+  let hold = false; // après un changement note ↔ accord : attendre une nouvelle frappe
 
   function loop(now) {
     raf = requestAnimationFrame(loop);
@@ -95,7 +110,12 @@ export function createListener(ctx, source, {
 
     // Nouvelle frappe : le volume remonte nettement après avoir baissé.
     floor = Math.min(floor, level);
-    if (emitted !== null && level > floor * 1.8) emitted = null;
+    if (level > floor * 1.8 || level < threshold) hold = false;
+    if (level > floor * 1.8) {
+      emitted = null;
+      chordDone = false;
+    }
+    if (judge) return chordFrame(now, level);
 
     let pitch = null;
     if (level >= threshold) {
@@ -112,10 +132,33 @@ export function createListener(ctx, source, {
     if (pitch.midi !== candidate) {
       candidate = pitch.midi;
       since = now;
-    } else if (now - since >= (isExpected(pitch.midi) ? fastMs : stableMs) && emitted !== pitch.midi) {
+    } else if (!hold && now - since >= (isExpected(pitch.midi) ? fastMs : stableMs) && emitted !== pitch.midi) {
       emitted = pitch.midi;
       floor = level;
       onNote?.(pitch);
+    }
+  }
+
+  function chordFrame(now, level) {
+    onFrame?.({ level, pitch: null });
+    if (level < threshold) {
+      run = { key: null, n: 0 };
+      chordDone = false;
+      onChordFrame?.(null);
+      return;
+    }
+    if (now - lastChord < 90) return;
+    lastChord = now;
+    big.getFloatTimeDomainData(bigBuf);
+    const analysis = analyzeChord(bigBuf, ctx.sampleRate, tuning);
+    onChordFrame?.(analysis);
+    const verdict = judge(analysis);
+    const key = verdict && (verdict.ok ? 'ok' : `${verdict.heard.pc}:${verdict.heard.quality}:${verdict.heard.bass}`);
+    run = key === run.key ? { key, n: run.n + 1 } : { key, n: 1 };
+    if (key && !hold && !chordDone && run.n >= (verdict.ok ? 2 : 6)) {
+      chordDone = true;
+      floor = level;
+      onChord?.(verdict);
     }
   }
   raf = requestAnimationFrame(loop);
@@ -133,6 +176,17 @@ export function createListener(ctx, source, {
     },
     setThreshold(rmsLevel) {
       threshold = rmsLevel;
+    },
+    // Accord attendu (fonction de jugement) ou null pour revenir aux notes.
+    // Un accord encore tenu ne compte pas pour le suivant : il faut le rejouer.
+    setChord(fn) {
+      if (!fn !== !judge) {
+        hold = true;
+        floor = Infinity;
+      }
+      judge = fn;
+      run = { key: null, n: 0 };
+      candidate = null;
     },
   };
 }

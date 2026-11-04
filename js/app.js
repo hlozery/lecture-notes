@@ -302,8 +302,8 @@ $('#btn-free-start').addEventListener('click', () => play(freeLevel(data.free)))
 const INPUT_HELP = {
   buttons: 'Touche le nom de la note. Les accords se répondent toujours par leur nom (fondamentale + type).',
   keyboard: 'Une touche noire vaut le dièse comme le bémol (Do♯ = Ré♭). Les accords se répondent par leur nom.',
-  mic: 'Joue la note sur ton piano, l’iPhone écoute. Une fausse note compte comme une erreur, mais tu peux corriger. '
-    + 'Les accords se répondent encore avec les boutons.',
+  mic: 'Joue la note ou l’accord sur ton piano, l’iPhone écoute. Une fausse note compte comme une erreur, mais tu peux corriger. '
+    + 'Accords : joue toutes les notes ensemble ; avec « Octave : Exacte », il faut aussi le bon renversement (la bonne note à la basse).',
 };
 
 function renderSettings() {
