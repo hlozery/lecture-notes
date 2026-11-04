@@ -1,5 +1,5 @@
 // Boucle de jeu : tirage des notes / accords, chrono, score, série, fin de partie.
-import { pitchClass, noteName } from './music.js';
+import { pitchClass, noteName, midi, fromMidi } from './music.js';
 import { QUALITY_ORDER, INVERSION_NAMES, chordName } from './chords.js';
 import { renderStaff } from './staff.js';
 import { createInput } from './input.js';
@@ -11,12 +11,24 @@ export function itemName(item) {
   return item.inversion ? `${chordName(item)} · ${INVERSION_NAMES[item.inversion]}` : chordName(item);
 }
 
-function isCorrect(item, a) {
+function isCorrect(item, a, settings) {
   if (!a) return false;
   if (item.kind === 'chord') {
     return a.letter === item.root.letter && a.acc === item.root.acc && a.quality === item.quality;
   }
+  if ('midi' in a) {
+    return settings.micOctave === 'any' ? a.midi % 12 === pitchClass(item.note) : a.midi === midi(item.note);
+  }
   return 'pc' in a ? a.pc === pitchClass(item.note) : a.letter === item.note.letter && a.acc === item.note.acc;
+}
+
+// Ce que le micro a entendu, dit simplement (« Fa dièse », « Sol, mais une octave trop bas »).
+function heardText(a, item) {
+  const n = fromMidi(a.midi, item.note.acc === -1);
+  if (a.midi % 12 !== pitchClass(item.note)) return noteName(n);
+  const diff = Math.round((a.midi - midi(item.note)) / 12);
+  const octaves = Math.abs(diff) > 1 ? `${Math.abs(diff)} octaves` : 'une octave';
+  return `${noteName(n)}, mais ${octaves} trop ${diff > 0 ? 'haut' : 'bas'}`;
 }
 
 // Zone de réponse adaptée à chaque type d'élément présent dans la partie.
@@ -31,7 +43,7 @@ function createInputs(container, pool, settings, onAnswer) {
     container.append(box);
     inputs[kind] = { box, ...createInput(box, { onAnswer, ...opts }) };
   };
-  if (notes.length) add('note', { mode: settings.input, accs: uniq(notes.map((p) => p.note.acc)) });
+  if (notes.length) add('note', { mode: settings.input, settings, accs: uniq(notes.map((p) => p.note.acc)) });
   if (chords.length) {
     add('chord', {
       mode: 'chord',
@@ -45,6 +57,9 @@ function createInputs(container, pool, settings, onAnswer) {
       inputs[kind].reset();
       return inputs[kind];
     },
+    destroy() {
+      for (const input of Object.values(inputs)) input.destroy();
+    },
   };
 }
 
@@ -56,7 +71,7 @@ export function startGame({ level, pool, data, els, onAnswered, onEnd }) {
   const limitMs = (level.time || 0) * 1000;
   const st = {
     i: 0, score: 0, combo: 0, bestCombo: 0, correct: 0, times: [], missed: [],
-    current: null, input: null, t0: 0, raf: 0, timeout: 0, locked: true, over: false,
+    current: null, input: null, failed: false, t0: 0, raf: 0, timeout: 0, locked: true, over: false,
   };
 
   els.title.textContent = level.title;
@@ -95,6 +110,7 @@ export function startGame({ level, pool, data, els, onAnswered, onEnd }) {
     els.feedback.textContent = '';
     els.feedback.className = 'feedback';
     st.input = inputs.show(st.current.kind === 'chord' ? 'chord' : 'note');
+    st.failed = false;
     st.locked = false;
     st.t0 = performance.now();
     if (limitMs) tick();
@@ -111,11 +127,30 @@ export function startGame({ level, pool, data, els, onAnswered, onEnd }) {
 
   function answer(a) {
     if (st.locked || st.over) return;
-    st.locked = true;
-    cancelAnimationFrame(st.raf);
     const ms = performance.now() - st.t0;
     const item = st.current;
-    const ok = isCorrect(item, a);
+    const ok = isCorrect(item, a, data.settings);
+
+    // Micro : une fausse note compte comme une erreur (une seule fois), puis on peut réessayer.
+    if (!ok && a?.retry) {
+      if (!st.failed) miss(item, ms);
+      els.feedback.textContent = `On entend ${heardText(a, item)} — réessaie`;
+      els.feedback.className = 'feedback bad';
+      draw('bad');
+      return;
+    }
+
+    st.locked = true;
+    cancelAnimationFrame(st.raf);
+    if (st.failed) {
+      // Déjà comptée comme erreur : on montre la solution ou on valide la correction, sans points.
+      els.feedback.textContent = ok ? `${itemName(item)} ✓ (corrigé)` : `Temps écoulé — c’était ${itemName(item)}`;
+      els.feedback.className = ok ? 'feedback ok' : 'feedback bad';
+      draw(ok ? 'ok' : 'bad');
+      if (!ok) st.input.showAnswer(item.note);
+      st.timeout = setTimeout(next, ok ? 600 : 1600);
+      return;
+    }
     recordAnswer(data.stats, item.key, ok, ms);
 
     if (ok) {
@@ -144,8 +179,19 @@ export function startGame({ level, pool, data, els, onAnswered, onEnd }) {
     st.timeout = setTimeout(next, ok ? 600 : item.kind === 'chord' ? 2200 : 1600);
   }
 
+  // Erreur enregistrée sans passer à la suite (micro).
+  function miss(item, ms) {
+    st.failed = true;
+    st.combo = 0;
+    st.missed.push(item);
+    recordAnswer(data.stats, item.key, false, ms);
+    hud();
+    onAnswered();
+  }
+
   function finish() {
     st.over = true;
+    inputs.destroy();
     const avgMs = st.times.length ? st.times.reduce((a, b) => a + b, 0) / st.times.length : 0;
     onEnd({
       correct: st.correct, total: NOTES_PER_GAME, score: st.score,
@@ -156,6 +202,7 @@ export function startGame({ level, pool, data, els, onAnswered, onEnd }) {
   return {
     stop() {
       st.over = true;
+      inputs.destroy();
       cancelAnimationFrame(st.raf);
       clearTimeout(st.timeout);
     },

@@ -6,7 +6,7 @@ function defaults() {
     mode: 'notes', // onglet de l'accueil : 'notes' | 'chords'
     progress: {}, // { [idNiveau]: { stars, best } }
     stats: {},
-    settings: { input: 'buttons' },
+    settings: { input: 'buttons', micOctave: 'exact', micSensitivity: 'medium', tuning: 0 },
     free: {
       content: 'notes', clefs: 'sol', ledger: false, accs: 'none', time: 8,
       chordTypes: 'triads', inversions: false, chordAcc: false,

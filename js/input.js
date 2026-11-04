@@ -1,20 +1,85 @@
 // Zone de réponse : boutons Do Ré Mi… (+ barre ♭ ♮ ♯, + qualité d'accord) ou mini clavier de piano.
-import { LETTERS, ACC_SYMBOL, pitchClass } from './music.js';
+import { LETTERS, ACC_SYMBOL, pitchClass, fromMidi, noteName } from './music.js';
 import { QUALITIES } from './chords.js';
+import { SENSITIVITY, openMicrophone, createListener, micErrorMessage } from './mic.js';
 
 const WHITE_PCS = [0, 2, 4, 5, 7, 9, 11];
 // Touche noire → position (en largeurs de touche blanche) de sa frontière gauche.
 const BLACK_KEYS = [{ pc: 1, at: 1 }, { pc: 3, at: 2 }, { pc: 6, at: 4 }, { pc: 8, at: 5 }, { pc: 10, at: 6 }];
 
 /**
- * mode : 'buttons' | 'keyboard' | 'chord' (les accords se nomment toujours avec les boutons).
- * onAnswer reçoit { letter, acc } (boutons), { pc } (clavier) ou { letter, acc, quality } (accord).
+ * mode : 'buttons' | 'keyboard' | 'mic' | 'chord' (les accords se nomment toujours avec les boutons).
+ * onAnswer reçoit { letter, acc } (boutons), { pc } (clavier), { midi, retry } (micro)
+ * ou { letter, acc, quality } (accord). Chaque zone a reset(), showAnswer() et destroy().
  */
-export function createInput(container, { mode, accs, qualities, onAnswer }) {
+export function createInput(container, { mode, accs, qualities, settings, onAnswer }) {
   container.innerHTML = '';
   container.className = `input input-${mode}`;
   if (mode === 'keyboard') return keyboard(container, onAnswer);
+  if (mode === 'mic') return micInput(container, accs, settings, onAnswer);
   return buttons(container, accs, mode === 'chord' ? qualities : null, onAnswer);
+}
+
+// Volume (RMS) → position sur la jauge, en décibels de −60 à 0.
+export function levelToPercent(level) {
+  return Math.max(0, Math.min(100, ((20 * Math.log10(level || 1e-6) + 60) / 60) * 100));
+}
+
+export function meterHtml() {
+  return '<div class="meter"><div class="meter-fill"></div><div class="meter-mark"></div></div>';
+}
+
+// Jauge + note entendue en direct ; les notes jouées sont envoyées à onAnswer({ midi, retry: true }).
+function micInput(container, accs, settings, onAnswer) {
+  const threshold = SENSITIVITY[settings.micSensitivity] || SENSITIVITY.medium;
+  container.innerHTML = `${meterHtml()}<p class="mic-heard">Ouverture du micro…</p>`;
+  const fill = container.querySelector('.meter-fill');
+  const heard = container.querySelector('.mic-heard');
+  container.querySelector('.meter-mark').style.left = `${levelToPercent(threshold)}%`;
+  const idle = () => { heard.textContent = 'Joue la note au piano 🎹'; };
+
+  let mic = null, listener = null, closed = false, fallback = null;
+  openMicrophone()
+    .then((m) => {
+      if (closed) return m.close();
+      mic = m;
+      idle();
+      listener = createListener(m.ctx, m.source, {
+        threshold,
+        tuning: settings.tuning || 0,
+        onFrame({ level, pitch }) {
+          fill.style.width = `${levelToPercent(level)}%`;
+          fill.classList.toggle('on', level >= threshold);
+          if (pitch) heard.textContent = `On entend : ${noteName(fromMidi(pitch.midi))}`;
+        },
+        onNote: (pitch) => onAnswer({ midi: pitch.midi, retry: true }),
+      });
+    })
+    .catch((err) => {
+      if (closed) return;
+      // Micro indisponible : on répond avec les boutons pour cette partie.
+      container.innerHTML = `<p class="mic-error">${micErrorMessage(err)}</p>`;
+      container.className = 'input input-buttons';
+      fallback = buttons(container, accs, null, onAnswer);
+    });
+
+  return {
+    reset() {
+      if (fallback) return fallback.reset();
+      if (mic) idle();
+    },
+    showAnswer(n) {
+      if (fallback) return fallback.showAnswer(n);
+      heard.textContent = `C’était ${noteName(n)}`;
+    },
+    // Peut être appelé plusieurs fois (fin de partie, puis nouvelle partie).
+    destroy() {
+      if (closed) return;
+      closed = true;
+      listener?.stop();
+      mic?.close();
+    },
+  };
 }
 
 function press(el, handler) {
@@ -91,6 +156,7 @@ function buttons(container, accs, qualities, onAnswer) {
       if (n.acc) accButtons[n.acc]?.classList.add('correct');
       if (q) qualityButtons[q]?.classList.add('correct');
     },
+    destroy() {},
   };
 }
 
@@ -126,5 +192,6 @@ function keyboard(container, onAnswer) {
     showAnswer(n) {
       keys[pitchClass(n)].classList.add('correct');
     },
+    destroy() {},
   };
 }

@@ -161,12 +161,40 @@
   <div class="form">
     <label>Répondre avec</label>
     <div class="seg" id="set-input">
-      <button data-value="buttons">Noms de notes</button><button data-value="keyboard">Clavier de piano</button>
+      <button data-value="buttons">Noms</button><button data-value="keyboard">Clavier</button>
+      <button data-value="mic">Au piano 🎤</button>
     </div>
-    <p class="muted small">Avec le clavier, une touche noire vaut le dièse comme le bémol (Do♯ = Ré♭).
-      Les accords se répondent toujours par leur nom (fondamentale + type).</p>
+    <p class="muted small" id="set-input-help"></p>
+    <div class="form" id="set-mic">
+      <label>Octave</label>
+      <div class="seg" id="set-mic-octave">
+        <button data-value="exact">Exacte</button><button data-value="any">Peu importe</button>
+      </div>
+      <label>Sensibilité du micro</label>
+      <div class="seg" id="set-mic-sensitivity">
+        <button data-value="low">Faible</button><button data-value="medium">Moyenne</button><button data-value="high">Forte</button>
+      </div>
+      <button class="btn" id="btn-tuner">Tester et accorder le micro</button>
+    </div>
   </div>
   <div class="menu"><button class="btn danger" id="btn-reset">Réinitialiser la progression</button></div>
+</section>
+
+<!-- Test du micro et accordage -->
+<section class="screen" id="tuner" hidden>
+  <header class="bar"><button class="back" id="btn-tuner-back" aria-label="Retour">‹</button><h2>Tester le micro</h2><span></span></header>
+  <p class="muted center">Joue quelques notes : la bonne note doit s’afficher, et la jauge doit dépasser le trait.</p>
+  <div class="tuner-card">
+    <div class="tuner-note" id="t-note">—</div>
+    <div class="tuner-scale"><span>−50</span><span>0</span><span>+50</span><div class="needle" id="t-needle"></div></div>
+    <p class="muted center small" id="t-cents">&nbsp;</p>
+  </div>
+  <div id="t-meter"></div>
+  <p class="center small" id="t-status"></p>
+  <div class="menu">
+    <button class="btn primary" id="btn-calibrate">Accorder sur mon piano : jouer un La</button>
+    <button class="btn ghost" id="btn-tuning-reset">Revenir au La 440 Hz</button>
+  </div>
 </section>
 
 <script type="module" src="js/app.js"></script>

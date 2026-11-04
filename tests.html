@@ -10,6 +10,7 @@ import * as M from './js/music.js';
 import * as L from './js/levels.js';
 import * as S from './js/stats.js';
 import * as C from './js/chords.js';
+import * as P from './js/pitch.js';
 
 const results = [];
 const eq = (label, got, want) => results.push([label, JSON.stringify(got) === JSON.stringify(want), got, want]);
@@ -87,6 +88,36 @@ const pool = L.buildPool(L.LEVELS[0]);
 const prev = pool[0].key;
 eq('Pas deux fois la même note', Array.from({ length: 200 }, () => S.pickWeighted(pool, {}, prev, 0)).some((p) => p.key === prev), false);
 eq('Notes difficiles filtrées par type', S.hardest({ ...stats, 'ch:sol:0:0:maj:0': { n: 1, e: 1, t: 0, r: [1] } }, 10, C.isChordKey), ['ch:sol:0:0:maj:0']);
+
+// Détection de hauteur sur des sons de piano synthétiques
+// (8 harmoniques légèrement inharmoniques, amortissement, bruit optionnel ; fondamentale faible dans le grave).
+function pianoTone(midiNote, { sr = 48000, n = 2048, noise = 0, weakFundamental = false, seed = 1 } = {}) {
+  const f = P.midiToFreq(midiNote);
+  const buf = new Float32Array(n);
+  let r = seed;
+  const rand = () => ((r = (r * 16807) % 2147483647) / 2147483647) * 2 - 1;
+  for (let k = 1; k <= 8; k++) {
+    const fk = f * k * Math.sqrt(1 + 0.0004 * k * k);
+    if (fk > sr / 2) break;
+    const amp = (k === 1 && weakFundamental ? 0.25 : 1) / k;
+    const ph = k * 0.7;
+    for (let i = 0; i < n; i++) buf[i] += amp * Math.sin(2 * Math.PI * fk * i / sr + ph) * Math.exp(-i / sr * 3);
+  }
+  for (let i = 0; i < n; i++) buf[i] = buf[i] * 0.2 + noise * rand();
+  return buf;
+}
+const detect = (buf) => { const r = P.yin(buf, 48000); return r && P.nearestNote(r.freq).midi; };
+const range = Array.from({ length: 49 }, (_, i) => 36 + i); // Do2 (36) à Do6 (84)
+const wrong = (opts) => range.filter((m) => detect(pianoTone(m, opts)) !== m);
+eq('Micro : Do2 à Do6 reconnus', wrong({}), []);
+eq('Micro : avec bruit de fond', wrong({ noise: 0.01 }), []);
+eq('Micro : fondamentale faible (grave)', wrong({ weakFundamental: true }), []);
+eq('Micro : La 440 = MIDI 69, 0 cent', P.nearestNote(440), { midi: 69, cents: 0 });
+eq('Micro : piano 20 cents trop haut, compensé', P.nearestNote(440 * 2 ** (20 / 1200), 20), { midi: 69, cents: 0 });
+eq('Micro : silence → rien', P.yin(new Float32Array(2048), 48000), null);
+let seed = 42;
+const whiteNoise = Float32Array.from({ length: 2048 }, () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1);
+eq('Micro : bruit pur → rien', P.yin(whiteNoise, 48000), null);
 
 const out = document.getElementById('out');
 for (const [label, ok, got, want] of results) {

@@ -1,6 +1,9 @@
 // Navigation entre écrans, onglets Notes / Accords, progression, réglages.
 import { LEVELS, CHORD_LEVELS, RANGES, buildPool, freeLevel, starsFor, isUnlocked } from './levels.js';
-import { fromDiatonic, noteKey, parseKey, shortName } from './music.js';
+import { fromDiatonic, fromMidi, noteName, noteKey, parseKey, shortName } from './music.js';
+import { nearestNote } from './pitch.js';
+import { SENSITIVITY, openMicrophone, createListener, micErrorMessage } from './mic.js';
+import { levelToPercent, meterHtml } from './input.js';
 import { QUALITIES, QUALITY_ORDER, INVERSION_NAMES, makeChordItem, parseChordKey, isChordKey, chordShort } from './chords.js';
 import { renderStaff } from './staff.js';
 import { startGame } from './game.js';
@@ -296,19 +299,125 @@ $('#btn-free-start').addEventListener('click', () => play(freeLevel(data.free)))
 
 // ---------- Réglages ----------
 
+const INPUT_HELP = {
+  buttons: 'Touche le nom de la note. Les accords se répondent toujours par leur nom (fondamentale + type).',
+  keyboard: 'Une touche noire vaut le dièse comme le bémol (Do♯ = Ré♭). Les accords se répondent par leur nom.',
+  mic: 'Joue la note sur ton piano, l’iPhone écoute. Une fausse note compte comme une erreur, mais tu peux corriger. '
+    + 'Les accords se répondent encore avec les boutons.',
+};
+
 function renderSettings() {
-  bindSeg($('#set-input'), data.settings.input, (v) => {
-    data.settings.input = v;
+  const s = data.settings;
+  const refresh = () => {
+    $('#set-input-help').textContent = INPUT_HELP[s.input];
+    $('#set-mic').hidden = s.input !== 'mic';
+  };
+  const bind = (sel, field) => bindSeg($(sel), s[field], (v) => {
+    s[field] = v;
     save(data);
+    refresh();
+  });
+  bind('#set-input', 'input');
+  bind('#set-mic-octave', 'micOctave');
+  bind('#set-mic-sensitivity', 'micSensitivity');
+  refresh();
+}
+
+// ---------- Test du micro et accordage ----------
+
+let tuner = null;
+
+function tuningText(c) {
+  if (!c) return 'Accordage : La = 440 Hz.';
+  return `Accordage : ${c > 0 ? '+' : ''}${c} cents (piano un peu ${c > 0 ? 'haut' : 'bas'}).`;
+}
+
+async function openTuner() {
+  show('tuner');
+  const threshold = SENSITIVITY[data.settings.micSensitivity] || SENSITIVITY.medium;
+  $('#t-meter').innerHTML = meterHtml();
+  $('#t-meter .meter-mark').style.left = `${levelToPercent(threshold)}%`;
+  const fill = $('#t-meter .meter-fill');
+  const status = $('#t-status');
+  $('#t-note').textContent = '—';
+  status.className = 'center small';
+  status.textContent = 'Ouverture du micro…';
+  $('#btn-calibrate').disabled = true;
+
+  const session = { calibrating: null };
+  tuner = session;
+  try {
+    session.mic = await openMicrophone();
+  } catch (err) {
+    status.textContent = micErrorMessage(err);
+    status.className = 'center small mic-error';
+    return;
+  }
+  if (tuner !== session) return session.mic.close();
+  status.textContent = tuningText(data.settings.tuning);
+  $('#btn-calibrate').disabled = false;
+
+  session.listener = createListener(session.mic.ctx, session.mic.source, {
+    threshold,
+    tuning: data.settings.tuning,
+    onFrame({ level, pitch }) {
+      fill.style.width = `${levelToPercent(level)}%`;
+      fill.classList.toggle('on', level >= threshold);
+      if (!pitch) return;
+      $('#t-note').textContent = noteName(fromMidi(pitch.midi));
+      $('#t-needle').style.left = `${50 + pitch.cents}%`;
+      $('#t-cents').textContent = `${pitch.cents > 0 ? '+' : ''}${pitch.cents} cents`;
+      // Accordage : écarts mesurés sur un La (sans correction), pendant environ une seconde de son.
+      const cal = session.calibrating;
+      if (cal) {
+        const raw = nearestNote(pitch.freq);
+        if (raw.midi % 12 === 9) cal.push(raw.cents);
+        if (cal.length >= 30) finishCalibration(cal);
+      }
+    },
   });
 }
 
+function finishCalibration(samples) {
+  const sorted = [...samples].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  setTuning(Math.max(-50, Math.min(50, median)));
+}
+
+function setTuning(cents) {
+  data.settings.tuning = cents;
+  save(data);
+  if (tuner) {
+    tuner.calibrating = null;
+    tuner.listener?.setTuning(cents);
+  }
+  $('#t-status').textContent = `${tuningText(cents)} Enregistré ✓`;
+}
+
+function closeTuner() {
+  if (!tuner) return;
+  tuner.listener?.stop();
+  tuner.mic?.close();
+  tuner = null;
+}
+
+$('#btn-tuner').addEventListener('click', openTuner);
+$('#btn-tuner-back').addEventListener('click', () => {
+  closeTuner();
+  go('settings');
+});
+$('#btn-calibrate').addEventListener('click', () => {
+  if (!tuner?.listener) return;
+  tuner.calibrating = [];
+  $('#t-status').textContent = 'Joue un La et laisse-le sonner…';
+});
+$('#btn-tuning-reset').addEventListener('click', () => setTuning(0));
+
 $('#btn-reset').addEventListener('click', () => {
   if (!confirm('Effacer toute la progression et les statistiques ?')) return;
-  const { input } = data.settings;
-  const { mode } = data;
+  const { settings, mode } = data;
   data = reset();
-  data.settings.input = input;
+  data.settings = settings;
   data.mode = mode;
   save(data);
   go('home');

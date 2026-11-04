@@ -44,6 +44,15 @@ export function ledgerLines(pos) {
   return lines;
 }
 
+// Note la plus simple à lire pour une hauteur MIDI (dièses par défaut, bémols si demandé).
+export function fromMidi(m, preferFlat = false) {
+  const pc = ((m % 12) + 12) % 12;
+  const natural = SEMITONES.indexOf(pc);
+  const octave = Math.floor(m / 12) - 1;
+  if (natural >= 0) return note(natural, octave);
+  return preferFlat ? note(SEMITONES.indexOf(pc + 1), octave, -1) : note(SEMITONES.indexOf(pc - 1), octave, 1);
+}
+
 export function noteName(n) {
   return n.acc ? `${LETTERS[n.letter]} ${ACC_NAME[n.acc]}` : LETTERS[n.letter];
 }
